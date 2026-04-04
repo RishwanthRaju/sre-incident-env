@@ -1,0 +1,13 @@
+[project]
+name = "sre-incident-env"
+version = "1.0.0"
+description = "Live SRE Incident Response Environment"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "openai",
+    "httpx",
+    "openenv-core"
+]
