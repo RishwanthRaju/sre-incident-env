@@ -165,3 +165,13 @@ def step(action: Action):
 @app.api_route("/state", methods=["GET", "POST"])
 def get_state():
     return {"step": state.step, "health": state.health, "resolved": state.resolved, "task": state.task_level}
+
+# --- THE REQUIRED MAIN FUNCTION ---
+def main():
+    import uvicorn
+    import os
+    port = int(os.environ.get("PORT", 7860))
+    uvicorn.run("server.app:app", host="0.0.0.0", port=port)
+
+if __name__ == "__main__":
+    main()
