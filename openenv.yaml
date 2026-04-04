@@ -1,0 +1,7 @@
+name: sre-incident-env
+version: "1.0.0"
+description: "A live Site Reliability Engineering (SRE) environment where agents must diagnose and mitigate server incidents before the system crashes."
+endpoints:
+  reset: "/reset"
+  step: "/step"
+  state: "/state"
