@@ -15,9 +15,22 @@ def read_root():
 
 # --- ENTERPRISE-GRADE OPENENV MODELS ---
 class Action(BaseModel):
-    command: str = Field(..., description="The terminal command to execute (e.g., 'get_logs', 'block_ip').")
-    target: str = Field(..., description="The target entity (e.g., 'auth-service', '10.0.0.99', 'redis-cache-cluster').")
+    command: str = Field(..., description="The terminal command to execute.")
+    target: str = Field(..., description="The target entity.")
 
+class Observation(BaseModel):
+    terminal_output: str = Field(..., description="The simulated stdout terminal response.")
+    system_health: float = Field(..., description="Current cluster health (0.0 to 100.0).")
+    active_alerts: str = Field(..., description="The live PagerDuty/Prometheus alert string.")
+
+class Reward(BaseModel):
+    value: float = Field(..., description="Continuous reward signal between 0.0 and 1.0")
+
+class StepResponse(BaseModel):
+    observation: Observation
+    reward: float = Field(..., description="Continuous reward signal between 0.0 and 1.0")
+    done: bool = Field(..., description="True if incident resolved or system crashed.")
+    info: Dict[str, Any] = Field(default_factory=dict, description="Metadata including step count.")
 class Observation(BaseModel):
     terminal_output: str = Field(..., description="The simulated stdout terminal response.")
     system_health: float = Field(..., description="Current cluster health (0.0 to 100.0). Drops over time.")
