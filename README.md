@@ -29,31 +29,19 @@ To prevent agents from overfitting or memorizing static solutions, KubeSRE utili
 ### 3. Cascading Microservice Failures (Breadcrumb Tracing)
 Advanced tasks feature "Red Herring" alerts. An agent might receive a 500 Error on the `frontend-service`. It must parse the logs, trace the timeout to the `payment-gateway`, read those logs, trace the failure to `redis-cache-cluster`, and execute a `flush_cache` command to save the system. This evaluates true multi-hop autonomous debugging.
 
-## 🛠️ The 5-Tier Evaluation Matrix
-Agents are evaluated across a difficulty gradient utilizing 8 distinct terminal commands.
+## 🗺️ System Architecture: The "Insane" Microservice Cascade
+Unlike basic environments, KubeSRE forces the AI to trace failures across a distributed system. Here is the exact path the ReAct agent must navigate to prevent a system crash:
 
-* **Level 1 (Easy):** Resolve a Prometheus latency alert via pod restart.
-* **Level 2 (Medium):** Identify bad database credentials via Datadog logs and initiate a deployment rollback.
-* **Level 3 (Hard):** Investigate a 99% CPU ingress spike, dynamically extract the attacking IP from Nginx logs, and execute an IP block.
-* **Level 4 (Extreme):** Respond to an AWS CloudWatch OOM alert, run a terminal top command, identify the dynamic PID of a Java memory leak, and execute a surgical process kill.
-* **Level 5 (Insane):** Navigate a 3-hop microservice failure cascade (Frontend → Gateway → Cache) to identify the true root cause without crashing the system.
-
-## 🎯 Continuous Reward Shaping Strategy
-Compliant with strict OpenEnv RL specifications `[0.0 - 1.0]`:
-* **+0.15 to +0.30**: Dense rewards for executing correct diagnostic commands (`get_logs`, `run_top`) on the correct, dynamically generated targets.
-* **+1.0**: Sparse terminal reward for surgical root-cause mitigation.
-* **-15.0% System Health**: Temporal penalty for every step taken.
-* **-0.1**: Immediate deduction for destructive or syntactically invalid commands.
-
-## 💻 Reproducibility & OpenEnv Spec Compliance
-Built with FastAPI and Pydantic, KubeSRE is fully typed, containerized, and OpenEnv-spec compliant.
-
-```bash
-# 1. Build the Docker container
-docker build -t sre-env .
-
-# 2. Run the environment locally
-docker run -p 7860:7860 sre-env
-
-# 3. Run the baseline OpenEnv ReAct agent
-python inference.py
+```mermaid
+graph TD
+    A[🚨 Alert: Frontend 500 Error] -->|Action: get_logs| B(Frontend Service)
+    B -->|Log: Timeout reaching Gateway| C(Payment Gateway)
+    C -->|Action: get_logs| C
+    C -->|Log: Connection Refused to Cache| D(Redis Cluster)
+    D -->|Action: get_logs| D
+    D -->|Log: OOM Fatal Error| E{Action: flush_cache}
+    E -->|Reward: +1.0| F((✅ System Saved))
+    
+    style A fill:#ffe6e6,stroke:#ff0000,stroke-width:2px
+    style E fill:#e6ffe6,stroke:#00cc00,stroke-width:2px
+    style F fill:#ccffcc,stroke:#009900,stroke-width:2px
