@@ -11,45 +11,102 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# --- THE MISSION CONTROL DASHBOARD (FOR HUMAN JUDGES) ---
+# --- LEVEL 11: LIVE ANIMATED DATADOG DASHBOARD ---
 @app.get("/", response_class=HTMLResponse)
 def read_root():
     return """
-    <html>
-        <head>
-            <title>KubeSRE Mission Control</title>
-            <style>
-                body { background-color: #0d1117; color: #00ff00; font-family: 'Courier New', Courier, monospace; padding: 40px; }
-                h1 { color: #ff3333; text-shadow: 0 0 5px #ff0000; }
-                .panel { border: 1px solid #30363d; background: #161b22; padding: 20px; border-radius: 8px; max-width: 800px; margin-bottom: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.5); }
-                .highlight { color: #58a6ff; font-weight: bold; }
-                .status { display: inline-block; padding: 5px 10px; background-color: #238636; color: white; border-radius: 15px; font-size: 14px; font-weight: bold; }
-                ul { line-height: 1.6; }
-            </style>
-        </head>
-        <body>
-            <h1>🚨 KubeSRE: Autonomous Agent Benchmark</h1>
-            <div class="status">🟢 SERVER STATUS: LIVE & AWAITING AGENT</div>
-            <br><br>
-            <div class="panel">
-                <h2>📡 Environment Overview</h2>
-                <p>Welcome to the <b>KubeSRE OpenEnv</b>. This environment evaluates frontier ReAct AI models under extreme, time-degrading server conditions.</p>
-                <p><b>Key Mechanics:</b></p>
-                <ul>
-                    <li><span class="highlight">Temporal Degradation:</span> Server health drops 15% for every inefficient step taken.</li>
-                    <li><span class="highlight">Stochastic Generation:</span> Attack IPs and memory-leaking PIDs are randomized to prevent memorization.</li>
-                    <li><span class="highlight">Log Noise (Needle in a Haystack):</span> Agents must parse through normal HTTP traffic to find the true anomalies.</li>
-                </ul>
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>KubeSRE Live Monitor</title>
+        <style>
+            body { background-color: #0b0f19; color: #c9d1d9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; }
+            .header { border-bottom: 2px solid #30363d; padding-bottom: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+            h1 { color: #58a6ff; margin: 0; font-size: 24px; text-shadow: 0 0 10px rgba(88, 166, 255, 0.5); }
+            .live-badge { background-color: #238636; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; animation: pulse 2s infinite; }
+            @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+            .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+            .card { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+            .card h2 { margin-top: 0; color: #8b949e; font-size: 16px; text-transform: uppercase; letter-spacing: 1px; }
+            .health-bar-bg { background-color: #21262d; border-radius: 10px; height: 25px; width: 100%; overflow: hidden; margin-top: 10px; border: 1px solid #30363d; }
+            .health-bar-fill { height: 100%; width: 100%; transition: width 0.5s ease-in-out, background-color 0.5s ease-in-out; }
+            .stat-value { font-size: 36px; font-weight: bold; margin: 10px 0; }
+            .alert-box { background-color: rgba(248, 81, 73, 0.1); border-left: 4px solid #f85149; padding: 10px 15px; margin-top: 10px; font-family: monospace; color: #ff7b72; }
+            .resolved-box { background-color: rgba(46, 160, 67, 0.1); border-left: 4px solid #2ea043; padding: 10px 15px; margin-top: 10px; font-family: monospace; color: #3fb950; }
+            .info-text { font-size: 14px; color: #8b949e; line-height: 1.5; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>🚨 KubeSRE Mission Control</h1>
+            <div class="live-badge">● LIVE TELEMETRY</div>
+        </div>
+        
+        <div class="grid">
+            <div class="card">
+                <h2>Cluster Health (Temporal Degradation)</h2>
+                <div class="stat-value" id="health-text">100.0%</div>
+                <div class="health-bar-bg">
+                    <div id="health-bar" class="health-bar-fill" style="background-color: #2ea043;"></div>
+                </div>
+                <p class="info-text">Health drops by 15% for every inefficient step taken by the AI agent. Fatal crash at 0%.</p>
             </div>
-            <div class="panel">
-                <h2>🛠️ Active Endpoints (OpenEnv Spec)</h2>
-                <ul>
-                    <li><code>POST /reset</code> : Initializes a dynamic incident (Easy, Medium, Hard, Extreme, Insane)</li>
-                    <li><code>POST /step</code> : Executes a terminal action and returns the state observation</li>
-                    <li><code>GET /state</code> : Returns current cluster health and step count</li>
-                </ul>
+            
+            <div class="card">
+                <h2>Active Incident Status</h2>
+                <div class="stat-value">Task: <span id="task-level" style="color: #d2a8ff;">STANDBY</span></div>
+                <div>Current Step: <span id="step-count" style="font-weight: bold; color: #fff;">0</span> / 8</div>
+                <div id="alert-container">
+                    <div class="resolved-box">Awaiting POST /reset to initialize new incident.</div>
+                </div>
             </div>
-        </body>
+        </div>
+
+        <div class="card" style="margin-top: 20px;">
+            <h2>OpenEnv Terminal Stream</h2>
+            <p class="info-text">To watch the AI solve the incident live, run <code>python inference.py</code> in your local terminal. This dashboard will update automatically in real-time.</p>
+        </div>
+
+        <script>
+            function updateDashboard() {
+                fetch('/state')
+                    .then(response => response.json())
+                    .then(data => {
+                        // Update Health
+                        const health = Math.max(0, data.health);
+                        document.getElementById('health-text').innerText = health.toFixed(1) + '%';
+                        const bar = document.getElementById('health-bar');
+                        bar.style.width = health + '%';
+                        
+                        if (health > 60) { bar.style.backgroundColor = '#2ea043'; document.getElementById('health-text').style.color = '#2ea043'; }
+                        else if (health > 20) { bar.style.backgroundColor = '#d29922'; document.getElementById('health-text').style.color = '#d29922'; }
+                        else { bar.style.backgroundColor = '#f85149'; document.getElementById('health-text').style.color = '#f85149'; }
+
+                        // Update Stats
+                        document.getElementById('step-count').innerText = data.step;
+                        document.getElementById('task-level').innerText = data.task.toUpperCase();
+
+                        // Update Alerts
+                        const alertBox = document.getElementById('alert-container');
+                        if (data.resolved) {
+                            alertBox.innerHTML = '<div class="resolved-box">[RESOLVED] Root cause mitigated. System stabilized.</div>';
+                        } else if (data.health <= 0) {
+                            alertBox.innerHTML = '<div class="alert-box">[FATAL] SYSTEM CRASHED. SLA Violated.</div>';
+                        } else if (data.step > 0) {
+                            alertBox.innerHTML = '<div class="alert-box">[ACTIVE ALERT] Incident ongoing. Agent is investigating...</div>';
+                        } else {
+                            alertBox.innerHTML = '<div class="resolved-box">Awaiting agent connection...</div>';
+                        }
+                    })
+                    .catch(err => console.error("Waiting for server...", err));
+            }
+            // Fetch live data every 1 second
+            setInterval(updateDashboard, 1000);
+            updateDashboard();
+        </script>
+    </body>
     </html>
     """
 
@@ -75,7 +132,7 @@ class ResetResponse(BaseModel):
 # --- Dynamic State Management ---
 class ServerState:
     def __init__(self):
-        self.task_level = "easy"
+        self.task_level = "standby"
         self.step = 0
         self.health = 100.0
         self.resolved = False
@@ -115,6 +172,9 @@ def generate_top_noise(count: int) -> list:
 
 def get_dynamic_tasks(s: ServerState) -> Dict[str, Any]:
     return {
+        "standby": {
+            "alert": "Awaiting connection...", "solution_cmd": "", "solution_target": ""
+        },
         "easy": {
             "alert": f"[PROMETHEUS] HighLatency - {s.failing_pod} p99 > 2000ms",
             "solution_cmd": "restart_pod",
