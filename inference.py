@@ -30,19 +30,19 @@ async def main():
 
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
     
-    # Testing our ultimate task
+    # Testing the Ultimate Task
     task_name = "insane"
     log_start(task=task_name, env="sre-incident-env", model=MODEL_NAME)
     
     rewards = []
     history = []
     success = False
-    score = 0.0
     
     system_prompt = """You are an elite Site Reliability Engineer (SRE). 
 You MUST diagnose and fix the issue before server health hits 0%.
 Commands: "get_metrics", "get_logs", "run_top", "restart_pod", "rollback_deploy", "block_ip", "kill_process", "flush_cache".
 You MUST use Chain-of-Thought reasoning. If logs point to a different service, investigate that new service!
+You must read through the "Log Noise" to find the actual anomaly. 
 Respond ONLY with valid JSON EXACTLY like this: 
 {"thought": "I see an error on frontend, I should check its logs next.", "command": "get_logs", "target": "frontend-service"}"""
 
@@ -75,7 +75,6 @@ Respond ONLY with valid JSON EXACTLY like this:
                     
                 action_json = json.loads(action_text)
                 
-                # Extract the thought just for us to see in the console, but send only command/target to server!
                 thought = action_json.get("thought", "No thought provided.")
                 print(f"\n🧠 [AI THOUGHT]: {thought}")
                 
@@ -99,20 +98,29 @@ Respond ONLY with valid JSON EXACTLY like this:
 
             rewards.append(reward)
             
-            # The exact OpenEnv log format requires action string to look like command('target')
             log_action = f"{server_action['command']}('{server_action['target']}')"
             log_step(step, log_action, reward, done, error)
             
-            history.append(f"Step {step}: ran {log_action} -> Terminal: {obs['terminal_output']}")
+            history.append(f"Step {step}: ran {log_action} -> Terminal: {obs['terminal_output'][:100]}...")
 
             if done:
                 if "system_health" in obs and obs["system_health"] > 0 and reward == 1.0:
                     success = True
                 break
                 
-        score = sum(rewards) / len(rewards) if rewards else 0.0
-        if success:
-            score = max(score, 0.8)
+        # --- TRUE RL NORMALIZED GRADER ---
+        # The AI gets +0.2 for good diagnostics and +1.0 for solving it.
+        # Max possible reward is calculated based on optimal path.
+        max_possible_reward = (0.2 * (step - 1)) + 1.0 
+        total_reward = sum(rewards)
+        
+        # Normalize score strictly between 0.0 and 1.0
+        score = total_reward / max_possible_reward if max_possible_reward > 0 else 0.0
+        score = max(0.0, min(1.0, score))
+        
+        if not success:
+            # Heavy penalty if the system crashes or they fail to resolve the root cause
+            score = score * 0.5 
             
         log_end(success, step, score, rewards)
 
