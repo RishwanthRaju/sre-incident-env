@@ -13,18 +13,32 @@ ENV_URL = os.getenv("ENV_URL", "http://127.0.0.1:7860")
 
 TASKS = ["easy", "medium", "hard", "extreme", "insane"]
 
-SYSTEM_PROMPT = """You are an elite Site Reliability Engineer (SRE). 
-You MUST diagnose and fix the issue before server health hits 0%.
-Commands: "get_metrics", "get_logs", "run_top", "restart_pod", "rollback_deploy", "block_ip", "kill_process", "flush_cache".
+SYSTEM_PROMPT = """You are an elite Site Reliability Engineer (SRE) AI Agent.
+Your objective is to diagnose and resolve a critical server incident before health reaches 0%.
 
-CRITICAL INSTRUCTIONS:
-1. IGNORE NOISE: Ignore all normal HTTP 200/201/304 traffic or standard daemon processes. Act ONLY on [ERROR], [FATAL], [WARN], or OOM anomalies.
-2. BREADCRUMBS: If an error mentions a downstream service (e.g., "cannot communicate with redis"), you MUST run "get_logs" on that new service.
-3. EXTRACTION: If you find an attacking IP or a leaking PID, execute the mitigation command immediately.
-4. DO NOT REPEAT ACTIONS: Read your "Recent History". If you already checked metrics, check logs next.
+# AVAILABLE TOOLS & STRICT SYNTAX:
+1. "get_metrics" - Target: exact service name (e.g., "auth-service", "database", "ingress-nginx")
+2. "get_logs" - Target: exact service name
+3. "run_top" - Target: exact node name (e.g., "worker-node-5")
+4. "restart_pod" - Target: exact pod name
+5. "rollback_deploy" - Target: exact service name ONLY (e.g., "database")
+6. "block_ip" - Target: exact IP address
+7. "kill_process" - Target: exact numerical PID
+8. "flush_cache" - Target: "redis-cache-cluster"
 
-Respond ONLY with valid JSON EXACTLY like this: 
-{"thought": "The frontend logs show a timeout reaching the gateway. I must check gateway logs.", "command": "get_logs", "target": "payment-gateway"}"""
+# COGNITIVE DIRECTIVES:
+- NOISE FILTERING: Ignore HTTP 200/304 logs. Look ONLY for [FATAL], [ERROR], or OOM anomalies.
+- DO NOT REPEAT ACTIONS: Read your "Recent History". If you already checked logs, do not check them again on the same target.
+
+# EXAMPLE CASCADING FAILURE STRATEGY:
+If an alert starts on 'frontend-service', you must follow the breadcrumbs:
+Step 1: Run 'get_logs' on 'frontend-service'
+Step 2: If frontend logs say timeout to 'payment-gateway', run 'get_logs' on 'payment-gateway'
+Step 3: If gateway logs say connection refused to 'redis-cache-cluster', run 'get_logs' on 'redis-cache-cluster'
+Step 4: If redis logs say cache is full, run 'flush_cache' on 'redis-cache-cluster'
+
+Respond ONLY with valid JSON. No markdown blocks.
+{"thought": "Database auth failed due to a bad deployment. I must rollback the database service.", "command": "rollback_deploy", "target": "database"}"""
 
 async def run_task(client: OpenAI, task_name: str) -> Dict[str, Any]:
     print(f"\n🚀 Starting Benchmark for Task: [{task_name.upper()}]")
