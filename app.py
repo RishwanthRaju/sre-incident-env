@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 import random
+import datetime
 
 app = FastAPI(
     title="KubeSRE OpenEnv",
@@ -15,8 +16,8 @@ def read_root():
 
 # --- ENTERPRISE-GRADE OPENENV MODELS ---
 class Action(BaseModel):
-    command: str = Field(..., description="The terminal command to execute (e.g., 'get_logs', 'block_ip').")
-    target: str = Field(..., description="The target entity (e.g., 'auth-service', '10.0.0.99', 'redis-cache-cluster').")
+    command: str = Field(..., description="The terminal command to execute.")
+    target: str = Field(..., description="The target entity.")
 
 class Observation(BaseModel):
     terminal_output: str = Field(..., description="The simulated stdout terminal response.")
@@ -48,6 +49,30 @@ class ServerState:
         self.leak_pid = str(random.randint(10000, 99999))
 
 state = ServerState()
+
+# --- NOISE GENERATORS (THE NEEDLE IN A HAYSTACK) ---
+def generate_log_noise(service: str, count: int) -> list:
+    logs = []
+    for _ in range(count):
+        time_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        status = random.choice([200, 200, 201, 304])
+        endpoint = random.choice(["/health", "/metrics", "/api/v1/status", "/ping", "/ready"])
+        ip = f"10.0.{random.randint(1,20)}.{random.randint(1,255)}"
+        logs.append(f"{time_str} [INFO] {service}: HTTP GET {endpoint} {status} from {ip} - {random.randint(2,45)}ms")
+    return logs
+
+def generate_top_noise(count: int) -> list:
+    processes = []
+    users = ["root", "ubuntu", "nginx", "postgres", "datadog"]
+    cmds = ["nginx: worker process", "python3 main.py", "postgres: checkpointer", "sshd: /usr/sbin/sshd", "agent"]
+    for _ in range(count):
+        pid = random.randint(100, 9999)
+        user = random.choice(users)
+        cpu = round(random.uniform(0.0, 1.5), 1)
+        mem = round(random.uniform(0.1, 2.0), 1)
+        cmd = random.choice(cmds)
+        processes.append(f"{pid:<6} {user:<8} 20   0    2.1G    0.2G   0.0G  {cpu:<4}  {mem:<4}  {cmd}")
+    return processes
 
 def get_dynamic_tasks(s: ServerState) -> Dict[str, Any]:
     return {
@@ -83,9 +108,7 @@ def reset(task: str = "hard"):
     global state
     state = ServerState() 
     state.task_level = task if task in ["easy", "medium", "hard", "extreme", "insane"] else "easy"
-    
     tasks = get_dynamic_tasks(state)
-    
     return ResetResponse(
         observation=Observation(
             terminal_output="[KubeSRE Terminal] Connected. Waiting for commands.",
@@ -109,34 +132,45 @@ def step(action: Action):
     
     if action.command == "get_metrics":
         reward += 0.15
-        terminal_out = f"[SYSTEM METRICS - {action.target}]\nCPU: {random.randint(10,99)}% | RAM: {random.randint(10,99)}%"
+        terminal_out = f"[SYSTEM METRICS - {action.target}]\nCPU: {random.randint(10,99)}% | RAM: {random.randint(10,99)}% | IOPS: {random.randint(100,5000)}"
         
     elif action.command == "get_logs":
         reward += 0.20
+        anomaly_log = ""
         if state.task_level == "easy" and action.target == state.failing_pod:
-            terminal_out = f"[ERROR] {state.failing_pod}: Timeout connecting. Thread pool exhausted."
+            anomaly_log = f"[ERROR] {state.failing_pod}: Timeout connecting. Thread pool exhausted."
         elif state.task_level == "medium" and action.target == "database":
-            terminal_out = f"[FATAL] Password auth failed. Hint: Bad credentials in deployment {state.bad_version}."
+            anomaly_log = f"[FATAL] Password auth failed. Hint: Bad credentials in deployment {state.bad_version}."
         elif state.task_level == "hard" and "ingress" in action.target:
-            terminal_out = f"[WARN] ingress-nginx: Layer 7 DDoS attack from {state.attacker_ip}."
+            anomaly_log = f"[WARN] ingress-nginx: Layer 7 DDoS attack from {state.attacker_ip}."
         elif state.task_level == "insane":
             if action.target == "frontend-service":
-                terminal_out = "[ERROR] frontend-service: 504 Gateway Timeout. Failed to reach 'payment-gateway' on port 8080."
+                anomaly_log = "[ERROR] frontend-service: 504 Gateway Timeout. Failed to reach 'payment-gateway' on port 8080."
             elif action.target == "payment-gateway":
-                terminal_out = "[FATAL] payment-gateway: Connection refused. Cannot communicate with 'redis-cache-cluster'. State is corrupted."
+                anomaly_log = "[FATAL] payment-gateway: Connection refused. Cannot communicate with 'redis-cache-cluster'."
             elif action.target == "redis-cache-cluster":
-                terminal_out = "[OOM] redis-cache-cluster: Cache memory is full. Cannot accept writes. Requires command 'flush_cache'."
-            else:
-                terminal_out = f"[LOGS] No errors found for {action.target}."
-        else:
-            terminal_out = f"[LOGS] No anomalous logs found for {action.target}."
+                anomaly_log = "[OOM] redis-cache-cluster: Cache memory is full. Cannot accept writes. Requires command 'flush_cache'."
+        
+        # HIDE THE ANOMALY IN 15 LINES OF NOISE
+        noise = generate_log_noise(action.target, 15)
+        if anomaly_log:
+            insert_idx = random.randint(2, 12)
+            noise.insert(insert_idx, anomaly_log)
+        terminal_out = f"[RAW SYSTEM LOGS - {action.target}]\n" + "\n".join(noise)
             
     elif action.command == "run_top":
         if state.task_level == "extreme" and action.target == state.worker_node:
             reward += 0.30
-            terminal_out = f"PID   USER  %CPU  %MEM  COMMAND\n{state.leak_pid} root  15.0  85.5  java -jar memory_leak.jar\n1     root  0.1   0.2   systemd"
+            noise = generate_top_noise(12)
+            anomaly_top = f"{state.leak_pid:<6} root     20   0    85.2G   64.1G  2.1G  15.0  85.5  java -jar memory_leak.jar"
+            insert_idx = random.randint(1, 10)
+            noise.insert(insert_idx, anomaly_top)
+            header = "PID    USER      PR   NI   VIRT    RES    SHR   %CPU  %MEM  COMMAND"
+            terminal_out = f"[TOP OUTPUT - {action.target}]\n{header}\n" + "\n".join(noise)
         else:
-            terminal_out = f"[TOP] Normal processes running on {action.target}."
+            noise = generate_top_noise(12)
+            header = "PID    USER      PR   NI   VIRT    RES    SHR   %CPU  %MEM  COMMAND"
+            terminal_out = f"[TOP OUTPUT - {action.target}]\n{header}\n" + "\n".join(noise)
 
     elif action.command == task_info["solution_cmd"] and action.target == task_info["solution_target"]:
         state.resolved = True
@@ -166,7 +200,6 @@ def step(action: Action):
 def get_state():
     return {"step": state.step, "health": state.health, "resolved": state.resolved, "task": state.task_level}
 
-# --- THE REQUIRED MAIN FUNCTION ---
 def main():
     import uvicorn
     import os
