@@ -28,8 +28,6 @@ async def main():
         return
 
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
-    
-    # Testing the Ultimate Task
     task_name = "insane"
     log_start(task=task_name, env="sre-incident-env", model=MODEL_NAME)
     
@@ -37,26 +35,41 @@ async def main():
     history = []
     success = False
     
-    # --- UPGRADED ADVANCED PROMPT ENGINEERING ---
-    system_prompt = """You are an elite Site Reliability Engineer (SRE). 
-You MUST diagnose and fix the issue before server health hits 0%.
-Commands: "get_metrics", "get_logs", "run_top", "restart_pod", "rollback_deploy", "block_ip", "kill_process", "flush_cache".
+    # --- LEVEL 17: EXPLICIT CONSTRAINT & SELF-CORRECTION PROMPT ---
+        system_prompt = """You are an elite Site Reliability Engineer (SRE) AI Agent.
+Your objective is to diagnose and resolve a critical server incident before health reaches 0%.
 
-CRITICAL INSTRUCTIONS:
-1. IGNORE NOISE: Ignore all normal HTTP 200/201/304 traffic or standard daemon processes. Act ONLY on [ERROR], [FATAL], [WARN], or OOM anomalies.
-2. BREADCRUMBS: If an error mentions a downstream service (e.g., "cannot communicate with redis"), you MUST run "get_logs" on that new service.
-3. EXTRACTION: If you find an attacking IP or a leaking PID, execute the mitigation command immediately.
-4. DO NOT REPEAT ACTIONS: Read your "Recent History". If you already checked metrics, check logs next.
+# AVAILABLE TOOLS & STRICT SYNTAX:
+1. "get_metrics" - Target: exact service name (e.g., "auth-service", "database", "ingress-nginx")
+2. "get_logs" - Target: exact service name
+3. "run_top" - Target: exact node name (e.g., "worker-node-5")
+4. "restart_pod" - Target: exact pod name
+5. "rollback_deploy" - Target: exact service name ONLY (e.g., "database") - Do NOT append version numbers!
+6. "block_ip" - Target: exact IP address
+7. "kill_process" - Target: exact numerical PID
+8. "flush_cache" - Target: "redis-cache-cluster"
 
-Respond ONLY with valid JSON EXACTLY like this: 
-{"thought": "The frontend logs show a timeout reaching the gateway. I must check gateway logs.", "command": "get_logs", "target": "payment-gateway"}"""
+# COGNITIVE DIRECTIVES:
+- BREADCRUMBS: If logs indicate a downstream failure (e.g., "Cannot communicate with redis"), you MUST investigate the downstream service next.
+- NOISE FILTERING: Ignore HTTP 200/304 logs. Look ONLY for [FATAL], [ERROR], or OOM anomalies.
+- SELF-CORRECTION: If your previous action returned an [ERROR], your syntax was wrong. Fix your target formatting immediately.
+
+# EXAMPLE CASCADING FAILURE STRATEGY:
+If an alert starts on 'frontend-service', you must follow the breadcrumbs:
+Step 1: Run 'get_logs' on 'frontend-service'
+Step 2: If frontend logs say timeout to 'payment-gateway', run 'get_logs' on 'payment-gateway'
+Step 3: If gateway logs say connection refused to 'redis-cache-cluster', run 'get_logs' on 'redis-cache-cluster'
+Step 4: If redis logs say cache is full, run 'flush_cache' on 'redis-cache-cluster'
+
+Respond ONLY with valid JSON. No markdown blocks.
+{"thought": "Database auth failed due to a bad deployment. I must rollback the database service.", "command": "rollback_deploy", "target": "database"}"""
 
     async with httpx.AsyncClient() as http:
         try:
             res = await http.post(f"{ENV_URL}/reset?task={task_name}")
             obs = res.json()["observation"]
         except Exception:
-            print(f"Failed to connect to {ENV_URL}. Is server.py running?")
+            print(f"Failed to connect to {ENV_URL}. Is server/app.py running?")
             return
         
         for step in range(1, 9):
@@ -73,21 +86,17 @@ Respond ONLY with valid JSON EXACTLY like this:
                     temperature=0.1,
                     max_tokens=150
                 )
-                action_text = completion.choices[0].message.content.strip()
-                
+                action_text = completion.choices.message.content.strip()
                 if "{" in action_text and "}" in action_text:
                     action_text = action_text[action_text.find("{"):action_text.rfind("}") + 1]
-                    
                 action_json = json.loads(action_text)
                 
                 thought = action_json.get("thought", "No thought provided.")
                 print(f"\n🧠 [AI THOUGHT]: {thought}")
-                
-                server_action = {"command": action_json["command"], "target": action_json["target"]}
+                server_action = {"command": action_json.get("command", "error"), "target": action_json.get("target", "error")}
                 error = None
             except Exception as e:
                 server_action = {"command": "error", "target": "error"}
-                action_text = "error"
                 error = "JSON Parse Error"
 
             try:
@@ -102,7 +111,6 @@ Respond ONLY with valid JSON EXACTLY like this:
                 error = "Env connection failed"
 
             rewards.append(reward)
-            
             log_action = f"{server_action['command']}('{server_action['target']}')"
             log_step(step, log_action, reward, done, error)
             
@@ -113,13 +121,11 @@ Respond ONLY with valid JSON EXACTLY like this:
                     success = True
                 break
                 
-        # --- TRUE RL NORMALIZED GRADER ---
         max_possible_reward = (0.2 * (step - 1)) + 1.0 
         total_reward = sum(rewards)
         score = total_reward / max_possible_reward if max_possible_reward > 0 else 0.0
         score = max(0.0, min(1.0, score))
-        if not success:
-            score = score * 0.5 
+        if not success: score = score * 0.5 
             
         log_end(success, step, score, rewards)
 
