@@ -6,7 +6,6 @@ from openai import OpenAI
 import httpx
 import time
 
-# --- CONFIGURATION ---
 API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
@@ -17,10 +16,15 @@ TASKS = ["easy", "medium", "hard", "extreme", "insane"]
 SYSTEM_PROMPT = """You are an elite Site Reliability Engineer (SRE). 
 You MUST diagnose and fix the issue before server health hits 0%.
 Commands: "get_metrics", "get_logs", "run_top", "restart_pod", "rollback_deploy", "block_ip", "kill_process", "flush_cache".
-You MUST use Chain-of-Thought reasoning. If logs point to a different service, investigate that new service!
-You must read through the "Log Noise" to find the actual anomaly. 
+
+CRITICAL INSTRUCTIONS:
+1. IGNORE NOISE: Ignore all normal HTTP 200/201/304 traffic or standard daemon processes. Act ONLY on [ERROR], [FATAL], [WARN], or OOM anomalies.
+2. BREADCRUMBS: If an error mentions a downstream service (e.g., "cannot communicate with redis"), you MUST run "get_logs" on that new service.
+3. EXTRACTION: If you find an attacking IP or a leaking PID, execute the mitigation command immediately.
+4. DO NOT REPEAT ACTIONS: Read your "Recent History". If you already checked metrics, check logs next.
+
 Respond ONLY with valid JSON EXACTLY like this: 
-{"thought": "I see an error on frontend, I should check its logs next.", "command": "get_logs", "target": "frontend-service"}"""
+{"thought": "The frontend logs show a timeout reaching the gateway. I must check gateway logs.", "command": "get_logs", "target": "payment-gateway"}"""
 
 async def run_task(client: OpenAI, task_name: str) -> Dict[str, Any]:
     print(f"\n🚀 Starting Benchmark for Task: [{task_name.upper()}]")
@@ -33,7 +37,6 @@ async def run_task(client: OpenAI, task_name: str) -> Dict[str, Any]:
             res = await http.post(f"{ENV_URL}/reset?task={task_name}")
             obs = res.json()["observation"]
         except Exception as e:
-            print(f"❌ Failed to connect to {ENV_URL}. Is server/app.py running?")
             return {"task": task_name, "success": False, "score": 0.0, "steps": 0, "error": str(e)}
         
         for step in range(1, 9):
@@ -51,19 +54,13 @@ async def run_task(client: OpenAI, task_name: str) -> Dict[str, Any]:
                     max_tokens=150
                 )
                 action_text = completion.choices[0].message.content.strip()
-                
-                # Clean up markdown formatting if the LLM adds it
                 if "{" in action_text and "}" in action_text:
-                    start_idx = action_text.find("{")
-                    end_idx = action_text.rfind("}") + 1
-                    action_text = action_text[start_idx:end_idx]
-                    
+                    action_text = action_text[action_text.find("{"):action_text.rfind("}") + 1]
                 action_json = json.loads(action_text)
                 thought = action_json.get("thought", "No thought provided.")
                 print(f"   🧠 [Step {step} THOUGHT]: {thought[:100]}...")
-                
                 server_action = {"command": action_json.get("command", "error"), "target": action_json.get("target", "error")}
-            except Exception as e:
+            except Exception:
                 server_action = {"command": "error", "target": "error"}
 
             try:
@@ -84,12 +81,10 @@ async def run_task(client: OpenAI, task_name: str) -> Dict[str, Any]:
                     success = True
                 break
                 
-        # --- TRUE RL NORMALIZED GRADER ---
         max_possible_reward = (0.2 * (step - 1)) + 1.0 
         total_reward = sum(rewards)
         score = total_reward / max_possible_reward if max_possible_reward > 0 else 0.0
         score = max(0.0, min(1.0, score))
-        
         if not success:
             score = score * 0.5 
             
@@ -111,7 +106,7 @@ async def main():
     for task in TASKS:
         result = await run_task(client, task)
         results.append(result)
-        time.sleep(1) # Brief pause between tasks so we don't spam the API
+        time.sleep(1) 
         
     print("\n\n===========================================================")
     print(" 📊 KUBESRE FINAL BENCHMARK SCORECARD 📊")
