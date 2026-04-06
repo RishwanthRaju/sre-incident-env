@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from typing import Dict, Any
 import random
@@ -10,9 +11,47 @@ app = FastAPI(
     version="1.0.0"
 )
 
-@app.get("/")
+# --- THE MISSION CONTROL DASHBOARD (FOR HUMAN JUDGES) ---
+@app.get("/", response_class=HTMLResponse)
 def read_root():
-    return {"message": "✅ KubeSRE Dynamic Environment is Live! Available endpoints: /reset, /step, /state"}
+    return """
+    <html>
+        <head>
+            <title>KubeSRE Mission Control</title>
+            <style>
+                body { background-color: #0d1117; color: #00ff00; font-family: 'Courier New', Courier, monospace; padding: 40px; }
+                h1 { color: #ff3333; text-shadow: 0 0 5px #ff0000; }
+                .panel { border: 1px solid #30363d; background: #161b22; padding: 20px; border-radius: 8px; max-width: 800px; margin-bottom: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.5); }
+                .highlight { color: #58a6ff; font-weight: bold; }
+                .status { display: inline-block; padding: 5px 10px; background-color: #238636; color: white; border-radius: 15px; font-size: 14px; font-weight: bold; }
+                ul { line-height: 1.6; }
+            </style>
+        </head>
+        <body>
+            <h1>🚨 KubeSRE: Autonomous Agent Benchmark</h1>
+            <div class="status">🟢 SERVER STATUS: LIVE & AWAITING AGENT</div>
+            <br><br>
+            <div class="panel">
+                <h2>📡 Environment Overview</h2>
+                <p>Welcome to the <b>KubeSRE OpenEnv</b>. This environment evaluates frontier ReAct AI models under extreme, time-degrading server conditions.</p>
+                <p><b>Key Mechanics:</b></p>
+                <ul>
+                    <li><span class="highlight">Temporal Degradation:</span> Server health drops 15% for every inefficient step taken.</li>
+                    <li><span class="highlight">Stochastic Generation:</span> Attack IPs and memory-leaking PIDs are randomized to prevent memorization.</li>
+                    <li><span class="highlight">Log Noise (Needle in a Haystack):</span> Agents must parse through normal HTTP traffic to find the true anomalies.</li>
+                </ul>
+            </div>
+            <div class="panel">
+                <h2>🛠️ Active Endpoints (OpenEnv Spec)</h2>
+                <ul>
+                    <li><code>POST /reset</code> : Initializes a dynamic incident (Easy, Medium, Hard, Extreme, Insane)</li>
+                    <li><code>POST /step</code> : Executes a terminal action and returns the state observation</li>
+                    <li><code>GET /state</code> : Returns current cluster health and step count</li>
+                </ul>
+            </div>
+        </body>
+    </html>
+    """
 
 # --- ENTERPRISE-GRADE OPENENV MODELS ---
 class Action(BaseModel):
@@ -151,7 +190,6 @@ def step(action: Action):
             elif action.target == "redis-cache-cluster":
                 anomaly_log = "[OOM] redis-cache-cluster: Cache memory is full. Cannot accept writes. Requires command 'flush_cache'."
         
-        # HIDE THE ANOMALY IN 15 LINES OF NOISE
         noise = generate_log_noise(action.target, 15)
         if anomaly_log:
             insert_idx = random.randint(2, 12)
