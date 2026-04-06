@@ -1,7 +1,6 @@
 import asyncio
 import os
 import json
-import textwrap
 from typing import List, Optional
 from openai import OpenAI
 import httpx
@@ -38,13 +37,19 @@ async def main():
     history = []
     success = False
     
+    # --- UPGRADED ADVANCED PROMPT ENGINEERING ---
     system_prompt = """You are an elite Site Reliability Engineer (SRE). 
 You MUST diagnose and fix the issue before server health hits 0%.
 Commands: "get_metrics", "get_logs", "run_top", "restart_pod", "rollback_deploy", "block_ip", "kill_process", "flush_cache".
-You MUST use Chain-of-Thought reasoning. If logs point to a different service, investigate that new service!
-You must read through the "Log Noise" to find the actual anomaly. 
+
+CRITICAL INSTRUCTIONS:
+1. IGNORE NOISE: Ignore all normal HTTP 200/201/304 traffic or standard daemon processes. Act ONLY on [ERROR], [FATAL], [WARN], or OOM anomalies.
+2. BREADCRUMBS: If an error mentions a downstream service (e.g., "cannot communicate with redis"), you MUST run "get_logs" on that new service.
+3. EXTRACTION: If you find an attacking IP or a leaking PID, execute the mitigation command immediately.
+4. DO NOT REPEAT ACTIONS: Read your "Recent History". If you already checked metrics, check logs next.
+
 Respond ONLY with valid JSON EXACTLY like this: 
-{"thought": "I see an error on frontend, I should check its logs next.", "command": "get_logs", "target": "frontend-service"}"""
+{"thought": "The frontend logs show a timeout reaching the gateway. I must check gateway logs.", "command": "get_logs", "target": "payment-gateway"}"""
 
     async with httpx.AsyncClient() as http:
         try:
@@ -109,17 +114,11 @@ Respond ONLY with valid JSON EXACTLY like this:
                 break
                 
         # --- TRUE RL NORMALIZED GRADER ---
-        # The AI gets +0.2 for good diagnostics and +1.0 for solving it.
-        # Max possible reward is calculated based on optimal path.
         max_possible_reward = (0.2 * (step - 1)) + 1.0 
         total_reward = sum(rewards)
-        
-        # Normalize score strictly between 0.0 and 1.0
         score = total_reward / max_possible_reward if max_possible_reward > 0 else 0.0
         score = max(0.0, min(1.0, score))
-        
         if not success:
-            # Heavy penalty if the system crashes or they fail to resolve the root cause
             score = score * 0.5 
             
         log_end(success, step, score, rewards)
