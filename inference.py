@@ -36,7 +36,7 @@ async def main():
     success = False
     
     # --- LEVEL 17: EXPLICIT CONSTRAINT & SELF-CORRECTION PROMPT ---
-        system_prompt = """You are an elite Site Reliability Engineer (SRE) AI Agent.
+    system_prompt = """You are an elite Site Reliability Engineer (SRE) AI Agent.
 Your objective is to diagnose and resolve a critical server incident before health reaches 0%.
 
 # AVAILABLE TOOLS & STRICT SYNTAX:
@@ -86,7 +86,7 @@ Respond ONLY with valid JSON. No markdown blocks.
                     temperature=0.1,
                     max_tokens=150
                 )
-                action_text = completion.choices.message.content.strip()
+                action_text = completion.choices[0].message.content.strip()  # ← FIXED [0]
                 if "{" in action_text and "}" in action_text:
                     action_text = action_text[action_text.find("{"):action_text.rfind("}") + 1]
                 action_json = json.loads(action_text)
@@ -121,11 +121,12 @@ Respond ONLY with valid JSON. No markdown blocks.
                     success = True
                 break
                 
-        max_possible_reward = (0.2 * (step - 1)) + 1.0 
+        max_possible_reward = (0.2 * (step - 1)) + 1.0
         total_reward = sum(rewards)
         score = total_reward / max_possible_reward if max_possible_reward > 0 else 0.0
         score = max(0.0, min(1.0, score))
-        if not success: score = score * 0.5 
+        if not success:
+            score = score * 0.5
             
         log_end(success, step, score, rewards)
 
