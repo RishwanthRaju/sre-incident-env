@@ -1,8 +1,23 @@
-spec_version: 1
 name: sre-incident-env
-version: 1.0.0
-description: "Live SRE Incident Response Environment"
+version: "1.0.0"
+description: "A live SRE environment where agents diagnose and mitigate server incidents."
 endpoints:
   reset: "/reset"
   step: "/step"
   state: "/state"
+tasks:
+  - name: easy
+    description: "Resolve a pod latency alert via restart"
+    grader: "/grade/easy"
+  - name: medium
+    description: "Fix database credentials failure via rollback"
+    grader: "/grade/medium"
+  - name: hard
+    description: "Block a Layer 7 DDoS attacker IP"
+    grader: "/grade/hard"
+  - name: extreme
+    description: "Kill a memory leak process via PID"
+    grader: "/grade/extreme"
+  - name: insane
+    description: "Resolve cascading microservice failure"
+    grader: "/grade/insane"
