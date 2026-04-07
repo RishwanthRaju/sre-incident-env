@@ -19,27 +19,36 @@ def read_root():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>KubeSRE Live Monitor</title>
+        <title>KubeSRE | Autonomous AI Agent</title>
         <style>
             body { background-color: #0b0f19; color: #c9d1d9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; }
-            .header { border-bottom: 2px solid #30363d; padding-bottom: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
-            h1 { color: #58a6ff; margin: 0; font-size: 24px; text-shadow: 0 0 10px rgba(88, 166, 255, 0.5); }
-            .live-badge { background-color: #238636; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; animation: pulse 2s infinite; }
-            @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+            .header { border-bottom: 2px solid #30363d; padding-bottom: 15px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+            h1 { color: #58a6ff; margin: 0; font-size: 26px; text-shadow: 0 0 12px rgba(88, 166, 255, 0.6); }
+            .subtitle { margin-top: 8px; font-size: 15px; color: #8b949e; }
+            .participant-name { color: #f0e68c; font-weight: bold; letter-spacing: 1px; padding: 2px 6px; background: rgba(240, 230, 140, 0.1); border-radius: 4px; border: 1px solid rgba(240, 230, 140, 0.3); }
+            .ai-model { color: #d2a8ff; font-family: monospace; font-size: 14px; }
+            .live-badge { background-color: #238636; color: white; padding: 6px 10px; border-radius: 4px; font-weight: bold; font-size: 12px; letter-spacing: 1px; animation: pulse 2s infinite; box-shadow: 0 0 10px rgba(35, 134, 54, 0.5); }
+            @keyframes pulse { 0% { opacity: 1; box-shadow: 0 0 10px rgba(35, 134, 54, 0.8); } 50% { opacity: 0.6; box-shadow: 0 0 2px rgba(35, 134, 54, 0.3); } 100% { opacity: 1; box-shadow: 0 0 10px rgba(35, 134, 54, 0.8); } }
             .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-            .card { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+            .card { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.4); }
             .card h2 { margin-top: 0; color: #8b949e; font-size: 16px; text-transform: uppercase; letter-spacing: 1px; }
             .health-bar-bg { background-color: #21262d; border-radius: 10px; height: 25px; width: 100%; overflow: hidden; margin-top: 10px; border: 1px solid #30363d; }
             .health-bar-fill { height: 100%; width: 100%; transition: width 0.5s ease-in-out, background-color 0.5s ease-in-out; }
             .stat-value { font-size: 36px; font-weight: bold; margin: 10px 0; }
-            .alert-box { background-color: rgba(248, 81, 73, 0.1); border-left: 4px solid #f85149; padding: 10px 15px; margin-top: 10px; font-family: monospace; color: #ff7b72; }
-            .resolved-box { background-color: rgba(46, 160, 67, 0.1); border-left: 4px solid #2ea043; padding: 10px 15px; margin-top: 10px; font-family: monospace; color: #3fb950; }
+            .alert-box { background-color: rgba(248, 81, 73, 0.1); border-left: 4px solid #f85149; padding: 12px 15px; margin-top: 10px; font-family: monospace; color: #ff7b72; border-radius: 0 4px 4px 0; }
+            .resolved-box { background-color: rgba(46, 160, 67, 0.1); border-left: 4px solid #2ea043; padding: 12px 15px; margin-top: 10px; font-family: monospace; color: #3fb950; border-radius: 0 4px 4px 0; }
             .info-text { font-size: 14px; color: #8b949e; line-height: 1.5; }
         </style>
     </head>
     <body>
         <div class="header">
-            <h1>🚨 KubeSRE Mission Control</h1>
+            <div>
+                <h1>🚨 KubeSRE Mission Control</h1>
+                <div class="subtitle">
+                    Engineered by: <span class="participant-name">Rishwanth Raju</span> | 
+                    Powered by: <span class="ai-model">Qwen-2.5-72B-Instruct</span>
+                </div>
+            </div>
             <div class="live-badge">● LIVE TELEMETRY</div>
         </div>
         <div class="grid">
@@ -53,16 +62,16 @@ def read_root():
             </div>
             <div class="card">
                 <h2>Active Incident Status</h2>
-                <div class="stat-value">Task: <span id="task-level" style="color: #d2a8ff;">STANDBY</span></div>
-                <div>Current Step: <span id="step-count" style="font-weight: bold; color: #fff;">0</span> / 8</div>
+                <div class="stat-value">Task: <span id="task-level" style="color: #d2a8ff; text-transform: uppercase;">STANDBY</span></div>
+                <div style="font-size: 18px; color: #8b949e;">Current Step: <span id="step-count" style="font-weight: bold; color: #fff;">0</span> / 8</div>
                 <div id="alert-container">
                     <div class="resolved-box">Awaiting POST /reset to initialize new incident.</div>
                 </div>
             </div>
         </div>
         <div class="card" style="margin-top: 20px;">
-            <h2>OpenEnv Terminal Stream</h2>
-            <p class="info-text">To watch the AI solve the incident live, run <code>python inference.py</code> in your local terminal.</p>
+            <h2>System Terminal Stream</h2>
+            <p class="info-text">To watch the Autonomous Agent diagnose and mitigate the cascading failure live, execute <code>python inference.py</code> in the terminal.</p>
         </div>
         <script>
             function updateDashboard() {
@@ -77,14 +86,14 @@ def read_root():
                         else if (health > 20) { bar.style.backgroundColor = '#d29922'; document.getElementById('health-text').style.color = '#d29922'; }
                         else { bar.style.backgroundColor = '#f85149'; document.getElementById('health-text').style.color = '#f85149'; }
                         document.getElementById('step-count').innerText = data.step;
-                        document.getElementById('task-level').innerText = data.task.toUpperCase();
+                        document.getElementById('task-level').innerText = data.task;
                         const alertBox = document.getElementById('alert-container');
                         if (data.resolved) {
-                            alertBox.innerHTML = '<div class="resolved-box">[RESOLVED] Root cause mitigated. System stabilized.</div>';
+                            alertBox.innerHTML = '<div class="resolved-box">[SUCCESS] Root cause mitigated. System stabilized by AI Agent.</div>';
                         } else if (data.health <= 0) {
                             alertBox.innerHTML = '<div class="alert-box">[FATAL] SYSTEM CRASHED. SLA Violated.</div>';
                         } else if (data.step > 0) {
-                            alertBox.innerHTML = '<div class="alert-box">[ACTIVE ALERT] Incident ongoing. Agent is investigating...</div>';
+                            alertBox.innerHTML = '<div class="alert-box">[ACTIVE ALERT] Incident ongoing. AI is mapping the service cascade...</div>';
                         } else {
                             alertBox.innerHTML = '<div class="resolved-box">Awaiting agent connection...</div>';
                         }
@@ -192,7 +201,7 @@ def reset(task: str = "hard"):
     tasks = get_dynamic_tasks(state)
     return ResetResponse(
         observation=Observation(
-            terminal_output="[KubeSRE Terminal] Connected. Waiting for commands.",
+            terminal_output="[KubeSRE Terminal] Connected. Waiting for AI reasoning to initiate...",
             system_health=state.health,
             active_alerts=tasks[state.task_level]["alert"]
         )
@@ -280,35 +289,14 @@ def step(action: Action):
 def get_state():
     return {"step": state.step, "health": state.health, "resolved": state.resolved, "task": state.task_level}
 
-# ✅ NEW: /tasks endpoint — lets validator discover all tasks + their graders
 @app.get("/tasks")
 def list_tasks():
     return [
-        {
-            "id": "easy",
-            "description": "Pod restart - High latency on auth-service pod",
-            "grader": "/grade/easy"
-        },
-        {
-            "id": "medium",
-            "description": "DB rollback - Database connection failing due to bad deployment",
-            "grader": "/grade/medium"
-        },
-        {
-            "id": "hard",
-            "description": "IP block - Layer 7 DDoS attack on ingress nodes",
-            "grader": "/grade/hard"
-        },
-        {
-            "id": "extreme",
-            "description": "Kill process - Out of memory on worker node",
-            "grader": "/grade/extreme"
-        },
-        {
-            "id": "insane",
-            "description": "Cache flush - Cascading failure in checkout API",
-            "grader": "/grade/insane"
-        }
+        {"id": "easy", "description": "Pod restart", "grader": "/grade/easy"},
+        {"id": "medium", "description": "DB rollback", "grader": "/grade/medium"},
+        {"id": "hard", "description": "IP block", "grader": "/grade/hard"},
+        {"id": "extreme", "description": "Kill process", "grader": "/grade/extreme"},
+        {"id": "insane", "description": "Cache flush", "grader": "/grade/insane"}
     ]
 
 TASK_SCORES = {
