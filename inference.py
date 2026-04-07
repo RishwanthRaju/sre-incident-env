@@ -10,7 +10,6 @@ API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 ENV_URL = os.getenv("ENV_URL", "http://127.0.0.1:7860")
 
-# --- UNTOUCHED: Your validated logging functions ---
 def log_start(task: str) -> None:
     print(f"[START] task={task}", flush=True)
 
@@ -27,7 +26,7 @@ async def main():
 
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
     
-    # --- UPGRADE 1: The SRE Playbook Prompt (Prevents the Medium task failure) ---
+    # 🧠 PERFECTIONIST AI UPGRADE: Few-Shot Determinism added to Prompt
     system_prompt = """You are an elite Site Reliability Engineer (SRE) AI Agent.
 Your objective is to diagnose and resolve a critical server incident before health reaches 0%.
 
@@ -41,17 +40,20 @@ Your objective is to diagnose and resolve a critical server incident before heal
 7. "kill_process" - Target: exact numerical PID (e.g., "1045")
 8. "flush_cache" - Target: "redis-cache-cluster"
 
-# INCIDENT PLAYBOOK (FOLLOW STRICTLY):
-- IF ALERT IS "HighLatency": Extract the exact pod name from the alert and use "restart_pod" on it.
-- IF ALERT IS "DatabaseConnectionFailing": Use "rollback_deploy" on "database" (Target is ONLY "database").
-- IF ALERT IS "TrafficSpike" or DDoS: Use "get_logs" on "ingress-nginx", find the attacker IP, then use "block_ip" on that exact IP.
-- IF ALERT IS "OutOfMemory": Extract the exact node name from the alert, use "run_top" on that node, find the PID of the memory leak (java -jar), and use "kill_process" on that PID.
-- IF ALERT IS "Checkout API 500": Follow logs from frontend-service -> payment-gateway -> redis-cache-cluster, then "flush_cache" on "redis-cache-cluster".
+# INCIDENT PLAYBOOK & FEW-SHOT EXAMPLES:
+- HighLatency Alert: Extract pod name from alert. Use "restart_pod".
+  Example: {"thought": "Latency on auth-service-123. Restarting pod.", "command": "restart_pod", "target": "auth-service-123"}
+- Database Connection Alert: Deploy is bad. Use "rollback_deploy" on "database".
+  Example: {"thought": "Database auth failed. Rolling back.", "command": "rollback_deploy", "target": "database"}
+- TrafficSpike / DDoS Alert: Use "get_logs" on "ingress-nginx", find attacker IP, then "block_ip" on that IP.
+  Example: {"thought": "Found attacking IP 64.74.35.18 in ingress logs. Blocking.", "command": "block_ip", "target": "64.74.35.18"}
+- OutOfMemory Alert: Extract node name from alert, use "run_top" on node, find PID of memory leak (java -jar), and "kill_process" on PID.
+  Example: {"thought": "OOM on worker-node-5. Found java process PID 99214. Killing.", "command": "kill_process", "target": "99214"}
+- Checkout API 500 Alert: Follow logs from frontend-service -> payment-gateway -> redis-cache-cluster, then "flush_cache" on "redis-cache-cluster".
+  Example: {"thought": "Redis cache is full causing cascading failure. Flushing.", "command": "flush_cache", "target": "redis-cache-cluster"}
 
-Respond ONLY with valid JSON. Do not include markdown formatting.
-{"thought": "I see an OOM alert on worker-node-5. I will run top to find the PID.", "command": "run_top", "target": "worker-node-5"}"""
+Respond ONLY with valid JSON. Do not include markdown formatting."""
 
-    # --- UPGRADE 2: Added "extreme" and "insane" tasks for maximum points ---
     task_names = ["easy", "medium", "hard", "extreme", "insane"]
 
     async with httpx.AsyncClient() as http:
@@ -64,7 +66,6 @@ Respond ONLY with valid JSON. Do not include markdown formatting.
             error_msg_for_prompt = "" 
 
             try:
-                # Add timeout to prevent hang
                 res = await http.post(f"{ENV_URL}/reset?task={task_name}", timeout=10.0)
                 obs = res.json()["observation"]
             except Exception as e:
@@ -75,35 +76,41 @@ Respond ONLY with valid JSON. Do not include markdown formatting.
                 current_step = step
                 history_text = "\n".join(history[-4:]) if history else "None"
                 
-                # --- UPGRADE 3: Expanded terminal vision from 100 to 1500 chars ---
                 terminal_out = obs.get('terminal_output', '')
                 terminal_snippet = terminal_out[-1500:] if terminal_out else "None" 
 
                 user_prompt = f"Alert: {obs.get('active_alerts', 'None')}\nHealth: {obs.get('system_health', 'Unknown')}%\nTerminal: {terminal_snippet}\nRecent History:\n{history_text}\n{error_msg_for_prompt}\nAction JSON:"
 
-                try:
-                    completion = client.chat.completions.create(
-                        model=MODEL_NAME,
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt}
-                        ],
-                        temperature=0.0, # Zero hallucination, strict logic
-                        max_tokens=200
-                    )
-                    action_text = completion.choices[0].message.content.strip()
-                    if "{" in action_text and "}" in action_text:
-                        action_text = action_text[action_text.find("{"):action_text.rfind("}") + 1]
-                    action_json = json.loads(action_text)
-                    thought = action_json.get("thought", "No thought provided.")
-                    print(f"\n🧠 [AI THOUGHT - {task_name.upper()}]: {thought}", flush=True)
-                    server_action = {"command": action_json.get("command", "error"), "target": action_json.get("target", "error")}
-                    error = None
-                    error_msg_for_prompt = "" 
-                except Exception:
-                    server_action = {"command": "error", "target": "error"}
-                    error = "JSON Parse Error"
-                    error_msg_for_prompt = "PREVIOUS FAILED: Your last output was not valid JSON. Output ONLY JSON."
+                # 🛡️ PERFECTIONIST AI UPGRADE: Fault Tolerance Retry Loop
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        completion = client.chat.completions.create(
+                            model=MODEL_NAME,
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_prompt}
+                            ],
+                            temperature=0.0,
+                            max_tokens=200
+                        )
+                        action_text = completion.choices[0].message.content.strip()
+                        if "{" in action_text and "}" in action_text:
+                            action_text = action_text[action_text.find("{"):action_text.rfind("}") + 1]
+                        action_json = json.loads(action_text)
+                        thought = action_json.get("thought", "No thought provided.")
+                        print(f"\n🧠 [AI THOUGHT - {task_name.upper()}]: {thought}", flush=True)
+                        server_action = {"command": action_json.get("command", "error"), "target": action_json.get("target", "error")}
+                        error = None
+                        error_msg_for_prompt = "" 
+                        break # Break loop if API call succeeds
+                    except Exception as e:
+                        if attempt == max_retries - 1:
+                            server_action = {"command": "error", "target": "error"}
+                            error = "JSON/API Parse Error"
+                            error_msg_for_prompt = "PREVIOUS FAILED: API Error or Invalid JSON. Output ONLY JSON."
+                        else:
+                            await asyncio.sleep(2) # Wait 2 seconds and retry if API fails
 
                 try:
                     step_res = await http.post(f"{ENV_URL}/step", json=server_action, timeout=10.0)
@@ -122,7 +129,6 @@ Respond ONLY with valid JSON. Do not include markdown formatting.
                 rewards.append(reward)
                 log_action = f"{server_action['command']}('{server_action['target']}')"
                 
-                # --- UNTOUCHED: Validated logging format ---
                 log_step(step, reward)
                 
                 hist_term = obs.get('terminal_output', '').split('\n')[-1] if obs.get('terminal_output') else "None"
@@ -140,7 +146,6 @@ Respond ONLY with valid JSON. Do not include markdown formatting.
             if not success:
                 score = max(0.05, score * 0.5)
 
-            # --- UNTOUCHED: Validated end logging format ---
             log_end(task=task_name, score=score, steps=current_step)
 
             try:
