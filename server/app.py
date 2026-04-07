@@ -11,7 +11,6 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# --- LEVEL 11: LIVE ANIMATED DATADOG DASHBOARD ---
 @app.get("/", response_class=HTMLResponse)
 def read_root():
     return """
@@ -43,7 +42,6 @@ def read_root():
             <h1>🚨 KubeSRE Mission Control</h1>
             <div class="live-badge">● LIVE TELEMETRY</div>
         </div>
-        
         <div class="grid">
             <div class="card">
                 <h2>Cluster Health (Temporal Degradation)</h2>
@@ -53,7 +51,6 @@ def read_root():
                 </div>
                 <p class="info-text">Health drops by 15% for every inefficient step taken by the AI agent. Fatal crash at 0%.</p>
             </div>
-            
             <div class="card">
                 <h2>Active Incident Status</h2>
                 <div class="stat-value">Task: <span id="task-level" style="color: #d2a8ff;">STANDBY</span></div>
@@ -63,32 +60,24 @@ def read_root():
                 </div>
             </div>
         </div>
-
         <div class="card" style="margin-top: 20px;">
             <h2>OpenEnv Terminal Stream</h2>
-            <p class="info-text">To watch the AI solve the incident live, run <code>python inference.py</code> in your local terminal. This dashboard will update automatically in real-time.</p>
+            <p class="info-text">To watch the AI solve the incident live, run <code>python inference.py</code> in your local terminal.</p>
         </div>
-
         <script>
             function updateDashboard() {
                 fetch('/state')
                     .then(response => response.json())
                     .then(data => {
-                        // Update Health
                         const health = Math.max(0, data.health);
                         document.getElementById('health-text').innerText = health.toFixed(1) + '%';
                         const bar = document.getElementById('health-bar');
                         bar.style.width = health + '%';
-                        
                         if (health > 60) { bar.style.backgroundColor = '#2ea043'; document.getElementById('health-text').style.color = '#2ea043'; }
                         else if (health > 20) { bar.style.backgroundColor = '#d29922'; document.getElementById('health-text').style.color = '#d29922'; }
                         else { bar.style.backgroundColor = '#f85149'; document.getElementById('health-text').style.color = '#f85149'; }
-
-                        // Update Stats
                         document.getElementById('step-count').innerText = data.step;
                         document.getElementById('task-level').innerText = data.task.toUpperCase();
-
-                        // Update Alerts
                         const alertBox = document.getElementById('alert-container');
                         if (data.resolved) {
                             alertBox.innerHTML = '<div class="resolved-box">[RESOLVED] Root cause mitigated. System stabilized.</div>';
@@ -102,7 +91,6 @@ def read_root():
                     })
                     .catch(err => console.error("Waiting for server...", err));
             }
-            // Fetch live data every 1 second
             setInterval(updateDashboard, 1000);
             updateDashboard();
         </script>
@@ -110,7 +98,6 @@ def read_root():
     </html>
     """
 
-# --- ENTERPRISE-GRADE OPENENV MODELS ---
 class Action(BaseModel):
     command: str = Field(..., description="The terminal command to execute.")
     target: str = Field(..., description="The target entity.")
@@ -122,21 +109,19 @@ class Observation(BaseModel):
 
 class StepResponse(BaseModel):
     observation: Observation
-    reward: float = Field(..., description="Continuous reward signal between 0.0 and 1.0")
+    reward: float = Field(..., description="Continuous reward signal strictly between 0.0 and 1.0")
     done: bool = Field(..., description="True if incident resolved or system crashed.")
-    info: Dict[str, Any] = Field(default_factory=dict, description="Metadata including step count.")
+    info: Dict[str, Any] = Field(default_factory=dict)
 
 class ResetResponse(BaseModel):
     observation: Observation
 
-# --- Dynamic State Management ---
 class ServerState:
     def __init__(self):
         self.task_level = "standby"
         self.step = 0
         self.health = 100.0
         self.resolved = False
-        
         self.attacker_ip = f"{random.randint(10,255)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,254)}"
         self.failing_pod = f"auth-service-{random.randint(1000,9999)}"
         self.bad_version = f"v{random.randint(2,5)}.{random.randint(0,9)}.{random.randint(0,9)}"
@@ -146,7 +131,6 @@ class ServerState:
 
 state = ServerState()
 
-# --- NOISE GENERATORS (THE NEEDLE IN A HAYSTACK) ---
 def generate_log_noise(service: str, count: int) -> list:
     logs = []
     for _ in range(count):
@@ -172,9 +156,7 @@ def generate_top_noise(count: int) -> list:
 
 def get_dynamic_tasks(s: ServerState) -> Dict[str, Any]:
     return {
-        "standby": {
-            "alert": "Awaiting connection...", "solution_cmd": "", "solution_target": ""
-        },
+        "standby": {"alert": "Awaiting connection...", "solution_cmd": "", "solution_target": ""},
         "easy": {
             "alert": f"[PROMETHEUS] HighLatency - {s.failing_pod} p99 > 2000ms",
             "solution_cmd": "restart_pod",
@@ -205,7 +187,7 @@ def get_dynamic_tasks(s: ServerState) -> Dict[str, Any]:
 @app.post("/reset", response_model=ResetResponse)
 def reset(task: str = "hard"):
     global state
-    state = ServerState() 
+    state = ServerState()
     state.task_level = task if task in ["easy", "medium", "hard", "extreme", "insane"] else "easy"
     tasks = get_dynamic_tasks(state)
     return ResetResponse(
@@ -222,19 +204,19 @@ def step(action: Action):
     state.step += 1
     tasks = get_dynamic_tasks(state)
     task_info = tasks[state.task_level]
-    
+
     if not state.resolved:
-        state.health -= 15.0 
+        state.health -= 15.0
 
     reward = 0.0
     terminal_out = f"Command '{action.command}' executed on '{action.target}'. No immediate resolution."
-    
+
     if action.command == "get_metrics":
-        reward += 0.15
+        reward = 0.15
         terminal_out = f"[SYSTEM METRICS - {action.target}]\nCPU: {random.randint(10,99)}% | RAM: {random.randint(10,99)}% | IOPS: {random.randint(100,5000)}"
-        
+
     elif action.command == "get_logs":
-        reward += 0.20
+        reward = 0.20
         anomaly_log = ""
         if state.task_level == "easy" and action.target == state.failing_pod:
             anomaly_log = f"[ERROR] {state.failing_pod}: Timeout connecting. Thread pool exhausted."
@@ -249,16 +231,16 @@ def step(action: Action):
                 anomaly_log = "[FATAL] payment-gateway: Connection refused. Cannot communicate with 'redis-cache-cluster'."
             elif action.target == "redis-cache-cluster":
                 anomaly_log = "[OOM] redis-cache-cluster: Cache memory is full. Cannot accept writes. Requires command 'flush_cache'."
-        
+
         noise = generate_log_noise(action.target, 15)
         if anomaly_log:
             insert_idx = random.randint(2, 12)
             noise.insert(insert_idx, anomaly_log)
         terminal_out = f"[RAW SYSTEM LOGS - {action.target}]\n" + "\n".join(noise)
-            
+
     elif action.command == "run_top":
         if state.task_level == "extreme" and action.target == state.worker_node:
-            reward += 0.30
+            reward = 0.30
             noise = generate_top_noise(12)
             anomaly_top = f"{state.leak_pid:<6} root     20   0    85.2G   64.1G  2.1G  15.0  85.5  java -jar memory_leak.jar"
             insert_idx = random.randint(1, 10)
@@ -273,16 +255,17 @@ def step(action: Action):
     elif action.command == task_info["solution_cmd"] and action.target == task_info["solution_target"]:
         state.resolved = True
         state.health = 100.0
-        reward += 1.0
+        reward = 0.95  # ← FIXED: strictly less than 1.0
         terminal_out = f"[SUCCESS] Root cause mitigated. {action.target} stabilized. Incident closed."
-        
+
     else:
-        reward -= 0.1
+        reward = 0.05  # ← FIXED: strictly greater than 0.0
         terminal_out = f"[ERROR] Action '{action.command}' on '{action.target}' failed. Health continues to drop."
 
-    reward = max(0.0, min(1.0, reward))
+    # Strictly between 0 and 1
+    reward = max(0.05, min(0.95, reward))
     done = state.resolved or state.health <= 0 or state.step >= 8
-    
+
     if state.health <= 0:
         terminal_out = "[FATAL] SYSTEM CRASHED. All nodes unresponsive."
 
@@ -291,12 +274,27 @@ def step(action: Action):
         system_health=state.health,
         active_alerts="[RESOLVED] All systems operational." if state.resolved else task_info["alert"]
     )
-    
+
     return StepResponse(observation=obs, reward=reward, done=done, info={"step": state.step})
 
 @app.api_route("/state", methods=["GET", "POST"])
 def get_state():
     return {"step": state.step, "health": state.health, "resolved": state.resolved, "task": state.task_level}
+
+# ← NEW: GRADER ENDPOINTS FOR ALL 5 TASKS
+@app.get("/grade/{task_name}")
+def grade(task_name: str):
+    if task_name not in ["easy", "medium", "hard", "extreme", "insane"]:
+        return {"score": 0.05}
+
+    if state.resolved:
+        efficiency = max(0.0, 1.0 - (state.step * 0.08))
+        score = 0.75 + (efficiency * 0.20)  # Range: 0.75 to 0.95
+    else:
+        score = max(0.05, (state.health / 100.0) * 0.40)  # Range: 0.05 to 0.40
+
+    score = max(0.05, min(0.95, score))
+    return {"score": round(score, 3)}
 
 def main():
     import uvicorn
