@@ -10,17 +10,16 @@ API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 ENV_URL = os.getenv("ENV_URL", "http://127.0.0.1:7860")
 
-def log_start(task: str, env: str, model: str) -> None:
-    print(f"[START] task={task} env={env} model={model}", flush=True)
+# 1. FIXED LOGGING FUNCTIONS to exactly match the validator
+def log_start(task: str) -> None:
+    print(f"[START] task={task}", flush=True)
 
-def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
-    error_val = error if error else "null"
-    done_val = str(done).lower()
-    print(f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}", flush=True)
+def log_step(step: int, reward: float) -> None:
+    print(f"[STEP] step={step} reward={reward}", flush=True)
 
-def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
-    print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
+def log_end(task: str, score: float, steps: int) -> None:
+    # Validator STRICTLY requires task=NAME in the [END] block
+    print(f"[END] task={task} score={score:.3f} steps={steps}", flush=True)
 
 async def main():
     if not API_KEY:
@@ -28,13 +27,8 @@ async def main():
         return
 
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
-    task_name = "insane"
-    log_start(task=task_name, env="sre-incident-env", model=MODEL_NAME)
-
-    rewards = []
-    history = []
-    success = False
-
+    
+    # Brought system_prompt into the correct scope
     system_prompt = """You are an elite Site Reliability Engineer (SRE) AI Agent.
 Your objective is to diagnose and resolve a critical server incident before health reaches 0%.
 
@@ -63,96 +57,25 @@ Step 4: If redis logs say cache is full, run 'flush_cache' on 'redis-cache-clust
 Respond ONLY with valid JSON. No markdown blocks.
 {"thought": "Database auth failed due to a bad deployment. I must rollback the database service.", "command": "rollback_deploy", "target": "database"}"""
 
-    async with httpx.AsyncClient() as http:
-        try:
-            res = await http.post(f"{ENV_URL}/reset?task={task_name}")
-            obs = res.json()["observation"]
-        except Exception:
-            print(f"Failed to connect to {ENV_URL}. Is server/app.py running?")
-            return
-
-        for step in range(1, 9):
-            history_text = "\n".join(history[-3:]) if history else "None"
-            user_prompt = f"Alert: {obs['active_alerts']}\nHealth: {obs['system_health']}%\nTerminal: {obs['terminal_output']}\nRecent History:\n{history_text}\nAction JSON:"
-
-            try:
-                completion = client.chat.completions.create(
-                    model=MODEL_NAME,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                    temperature=0.1,
-                    max_tokens=150
-                )
-                action_text = completion.choices[0].message.content.strip()
-                if "{" in action_text and "}" in action_text:
-                    action_text = action_text[action_text.find("{"):action_text.rfind("}") + 1]
-                action_json = json.loads(action_text)
-                thought = action_json.get("thought", "No thought provided.")
-                print(f"\n🧠 [AI THOUGHT]: {thought}")
-                server_action = {"command": action_json.get("command", "error"), "target": action_json.get("target", "error")}
-                error = None
-            except Exception as e:
-                server_action = {"command": "error", "target": "error"}
-                error = "JSON Parse Error"
-
-            try:
-                step_res = await http.post(f"{ENV_URL}/step", json=server_action)
-                step_data = step_res.json()
-                obs = step_data["observation"]
-                reward = step_data["reward"]
-                done = step_data["done"]
-            except Exception:
-                reward = 0.05
-                done = True
-                error = "Env connection failed"
-
-            rewards.append(reward)
-            log_action = f"{server_action['command']}('{server_action['target']}')"
-            log_step(step, log_action, reward, done, error)
-            history.append(f"Step {step}: ran {log_action} -> Terminal: {obs['terminal_output'][:100]}...")
-
-            if done:
-                if "system_health" in obs and obs["system_health"] > 0 and reward >= 0.90:
-                    success = True  # ← FIXED: was checking == 1.0, now >= 0.90
-                break
-
-        max_possible_reward = (0.2 * (step - 1)) + 0.95
-        total_reward = sum(rewards)
-        score = total_reward / max_possible_reward if max_possible_reward > 0 else 0.05
-        score = max(0.05, min(0.95, score))  # ← FIXED: strictly between 0 and 1
-        if not success:
-            score = max(0.05, score * 0.5)  # ← FIXED: never goes to 0.0
-
-        log_end(success, step, score, rewards)
-
-if __name__ == "__main__":
- async def main():
-    if not API_KEY:
-        print("ERROR: HF_TOKEN missing. Please set it in terminal.", flush=True)
-        return
-
-    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
-
-    # ✅ FIX: Run at least 3 tasks so validator sees 3 graded tasks
     task_names = ["easy", "medium", "hard"]
 
     async with httpx.AsyncClient() as http:
         for task_name in task_names:
-            log_start(task=task_name, env="sre-incident-env", model=MODEL_NAME)
+            log_start(task=task_name)
             rewards = []
             history = []
             success = False
+            current_step = 0
 
             try:
                 res = await http.post(f"{ENV_URL}/reset?task={task_name}")
                 obs = res.json()["observation"]
             except Exception:
-                print(f"Failed to connect to {ENV_URL}. Is server/app.py running?")
+                print(f"Failed to connect to {ENV_URL}. Is server/app.py running?", flush=True)
                 return
 
             for step in range(1, 9):
+                current_step = step
                 history_text = "\n".join(history[-3:]) if history else "None"
                 user_prompt = f"Alert: {obs['active_alerts']}\nHealth: {obs['system_health']}%\nTerminal: {obs['terminal_output']}\nRecent History:\n{history_text}\nAction JSON:"
 
@@ -171,7 +94,7 @@ if __name__ == "__main__":
                         action_text = action_text[action_text.find("{"):action_text.rfind("}") + 1]
                     action_json = json.loads(action_text)
                     thought = action_json.get("thought", "No thought provided.")
-                    print(f"\n🧠 [AI THOUGHT - {task_name.upper()}]: {thought}")
+                    print(f"\n🧠 [AI THOUGHT - {task_name.upper()}]: {thought}", flush=True)
                     server_action = {"command": action_json.get("command", "error"), "target": action_json.get("target", "error")}
                     error = None
                 except Exception as e:
@@ -191,7 +114,10 @@ if __name__ == "__main__":
 
                 rewards.append(reward)
                 log_action = f"{server_action['command']}('{server_action['target']}')"
-                log_step(step, log_action, reward, done, error)
+                
+                # EXACT step format requested by grader
+                log_step(step, reward)
+                
                 history.append(f"Step {step}: ran {log_action} -> Terminal: {obs['terminal_output'][:100]}...")
 
                 if done:
@@ -199,18 +125,22 @@ if __name__ == "__main__":
                         success = True
                     break
 
-            max_possible_reward = (0.2 * (step - 1)) + 0.95
+            max_possible_reward = (0.2 * (current_step - 1)) + 0.95
             total_reward = sum(rewards)
             score = total_reward / max_possible_reward if max_possible_reward > 0 else 0.05
             score = max(0.05, min(0.95, score))
             if not success:
                 score = max(0.05, score * 0.5)
 
-            log_end(success, step, score, rewards)
+            # EXACT end format requested by grader
+            log_end(task=task_name, score=score, steps=current_step)
 
-            # ✅ Call the grader after each task
             try:
                 grade_res = await http.get(f"{ENV_URL}/grade/{task_name}")
                 print(f"[GRADE] task={task_name} result={grade_res.json()}", flush=True)
             except Exception as e:
-                print(f"[GRADE ERROR] {e}", flush=True)
+                pass # Suppress grade endpoint errors to not mess up stdout logs
+
+# 2. FIXED EXECUTION: Properly runs the async loop so code actually executes!
+if __name__ == "__main__":
+    asyncio.run(main())
