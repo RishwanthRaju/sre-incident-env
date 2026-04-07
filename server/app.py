@@ -280,7 +280,37 @@ def step(action: Action):
 def get_state():
     return {"step": state.step, "health": state.health, "resolved": state.resolved, "task": state.task_level}
 
-# ← FIXED GRADERS: Independent simulation, no dependency on global state
+# ✅ NEW: /tasks endpoint — lets validator discover all tasks + their graders
+@app.get("/tasks")
+def list_tasks():
+    return [
+        {
+            "id": "easy",
+            "description": "Pod restart - High latency on auth-service pod",
+            "grader": "/grade/easy"
+        },
+        {
+            "id": "medium",
+            "description": "DB rollback - Database connection failing due to bad deployment",
+            "grader": "/grade/medium"
+        },
+        {
+            "id": "hard",
+            "description": "IP block - Layer 7 DDoS attack on ingress nodes",
+            "grader": "/grade/hard"
+        },
+        {
+            "id": "extreme",
+            "description": "Kill process - Out of memory on worker node",
+            "grader": "/grade/extreme"
+        },
+        {
+            "id": "insane",
+            "description": "Cache flush - Cascading failure in checkout API",
+            "grader": "/grade/insane"
+        }
+    ]
+
 TASK_SCORES = {
     "easy":    {"score": 0.85, "task": "easy",    "description": "Pod restart - solved in 2 steps"},
     "medium":  {"score": 0.80, "task": "medium",  "description": "DB rollback - solved in 2 steps"},
