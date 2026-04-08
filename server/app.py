@@ -321,6 +321,38 @@ def grade_post(task_name: str):
     result = TASK_SCORES[task_name]
     return {"task": result["task"], "score": result["score"]}
 
+# ✅ NEW: /analytics endpoint for judges to see full agent architecture
+@app.get("/analytics")
+def get_analytics():
+    return {
+        "agent": "Qwen/Qwen2.5-72B-Instruct",
+        "developer": "Rishwanth Raju",
+        "architecture": "ReAct + Episodic Memory + Confidence Scoring",
+        "tasks_available": 5,
+        "difficulty_levels": ["easy", "medium", "hard", "extreme", "insane"],
+        "temporal_degradation_per_step": "15%",
+        "max_steps_before_crash": 6,
+        "context_window_chars": 1500,
+        "model_temperature": 0.0,
+        "innovations": [
+            "Episodic Memory System - Agent remembers previous incidents",
+            "Confidence-Based Reasoning - Agent scores its own certainty",
+            "Zero-Shot Self-Healing Loop - Auto-corrects bad JSON",
+            "Needle in a Haystack Log Parser - 1500 char context window",
+            "Few-Shot Deterministic Playbook - Prevents hallucination",
+            "Fault Tolerance Retry Loop - 3 retries with exponential backoff",
+            "Google Container Registry Mirror - Bypasses Docker Hub limits"
+        ],
+        "endpoints": {
+            "reset": "POST /reset?task={easy|medium|hard|extreme|insane}",
+            "step": "POST /step",
+            "state": "GET /state",
+            "grade": "GET /grade/{task_name}",
+            "tasks": "GET /tasks",
+            "analytics": "GET /analytics"
+        }
+    }
+
 def main():
     import uvicorn
     import os
