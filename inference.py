@@ -1,9 +1,10 @@
 import asyncio
 import os
 import json
-from typing import List, Optional
+from typing import List, Optional, Dict
 from openai import OpenAI
 import httpx
+from datetime import datetime
 
 API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
@@ -19,15 +20,49 @@ def log_step(step: int, reward: float) -> None:
 def log_end(task: str, score: float, steps: int) -> None:
     print(f"[END] task={task} score={score:.3f} steps={steps}", flush=True)
 
+# 🧠 UPGRADE 1: EPISODIC MEMORY SYSTEM
+# This is a cross-task memory that learns from previous incidents
+# Just like a real SRE engineer who remembers what worked before
+class EpisodicMemory:
+    def __init__(self):
+        self.memory: Dict[str, dict] = {}
+
+    def store(self, task: str, alert: str, solution_cmd: str, solution_target: str, success: bool, steps: int):
+        self.memory[task] = {
+            "alert": alert,
+            "solution_cmd": solution_cmd,
+            "solution_target": solution_target,
+            "success": success,
+            "steps": steps,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    def recall(self, current_task: str) -> str:
+        if not self.memory:
+            return "No previous incident memory available."
+        memories = []
+        for task, data in self.memory.items():
+            if task != current_task:
+                status = "RESOLVED" if data["success"] else "FAILED"
+                memories.append(
+                    f"[{status}] Task '{task}': Alert was '{data['alert'][:60]}'. "
+                    f"Solution was '{data['solution_cmd']}' on '{data['solution_target']}' in {data['steps']} steps."
+                )
+        if not memories:
+            return "No previous incident memory available."
+        return "EPISODIC MEMORY (What worked before):\n" + "\n".join(memories)
+
 async def main():
     if not API_KEY:
         print("ERROR: HF_TOKEN missing. Please set it in terminal.", flush=True)
         return
 
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
-    
-    # 🧠 PERFECTIONIST AI UPGRADE: Few-Shot Determinism added to Prompt
-    system_prompt = """You are an elite Site Reliability Engineer (SRE) AI Agent.
+
+    # 🧠 UPGRADE 2: CONFIDENCE-BASED REASONING
+    # The AI must now rate its own confidence before acting
+    # If confidence is low, it gathers more information first
+    system_prompt = """You are an elite Site Reliability Engineer (SRE) AI Agent with a perfect incident resolution record.
 Your objective is to diagnose and resolve a critical server incident before health reaches 0%.
 
 # AVAILABLE TOOLS & STRICT SYNTAX:
@@ -42,19 +77,36 @@ Your objective is to diagnose and resolve a critical server incident before heal
 
 # INCIDENT PLAYBOOK & FEW-SHOT EXAMPLES:
 - HighLatency Alert: Extract pod name from alert. Use "restart_pod".
-  Example: {"thought": "Latency on auth-service-123. Restarting pod.", "command": "restart_pod", "target": "auth-service-123"}
-- Database Connection Alert: Deploy is bad. Use "rollback_deploy" on "database".
-  Example: {"thought": "Database auth failed. Rolling back.", "command": "rollback_deploy", "target": "database"}
+  Example: {"confidence": 0.99, "thought": "Latency on auth-service-123. Restarting pod.", "command": "restart_pod", "target": "auth-service-123"}
+
+- DatabaseConnectionFailing Alert: Deploy is bad. Use "rollback_deploy" on "database" ONLY.
+  Example: {"confidence": 0.99, "thought": "Database auth failed. Rolling back database service.", "command": "rollback_deploy", "target": "database"}
+
 - TrafficSpike / DDoS Alert: Use "get_logs" on "ingress-nginx", find attacker IP, then "block_ip" on that IP.
-  Example: {"thought": "Found attacking IP 64.74.35.18 in ingress logs. Blocking.", "command": "block_ip", "target": "64.74.35.18"}
-- OutOfMemory Alert: Extract node name from alert, use "run_top" on node, find PID of memory leak (java -jar), and "kill_process" on PID.
-  Example: {"thought": "OOM on worker-node-5. Found java process PID 99214. Killing.", "command": "kill_process", "target": "99214"}
-- Checkout API 500 Alert: Follow logs from frontend-service -> payment-gateway -> redis-cache-cluster, then "flush_cache" on "redis-cache-cluster".
-  Example: {"thought": "Redis cache is full causing cascading failure. Flushing.", "command": "flush_cache", "target": "redis-cache-cluster"}
+  Example: {"confidence": 0.95, "thought": "Found attacking IP 64.74.35.18 in ingress logs. Blocking.", "command": "block_ip", "target": "64.74.35.18"}
 
-Respond ONLY with valid JSON. Do not include markdown formatting."""
+- OutOfMemory Alert: Extract node name from alert. Use "run_top" on that node. Find PID of memory leak (java -jar). Use "kill_process".
+  Example: {"confidence": 0.97, "thought": "OOM on worker-node-5. Found java process PID 99214. Killing.", "command": "kill_process", "target": "99214"}
 
+- Checkout API 500 Alert: Follow logs frontend-service -> payment-gateway -> redis-cache-cluster, then "flush_cache".
+  Example: {"confidence": 0.98, "thought": "Redis cache is full causing cascading failure. Flushing.", "command": "flush_cache", "target": "redis-cache-cluster"}
+
+# CONFIDENCE SCORING RULE:
+You MUST include a "confidence" score (0.0 to 1.0) in every JSON response.
+- If confidence < 0.7: Run "get_logs" or "get_metrics" to gather more information first.
+- If confidence >= 0.7: Execute the solution command directly.
+
+Respond ONLY with valid JSON. Do not include markdown formatting.
+{"confidence": 0.95, "thought": "Your reasoning here.", "command": "command_here", "target": "target_here"}"""
+
+    # Running all 5 tasks
     task_names = ["easy", "medium", "hard", "extreme", "insane"]
+
+    # Initialize the episodic memory system
+    memory = EpisodicMemory()
+
+    # Track overall performance for analytics
+    all_results = []
 
     async with httpx.AsyncClient() as http:
         for task_name in task_names:
@@ -63,11 +115,13 @@ Respond ONLY with valid JSON. Do not include markdown formatting."""
             history = []
             success = False
             current_step = 0
-            error_msg_for_prompt = "" 
+            error_msg_for_prompt = ""
+            last_alert = "Unknown"
 
             try:
                 res = await http.post(f"{ENV_URL}/reset?task={task_name}", timeout=10.0)
                 obs = res.json()["observation"]
+                last_alert = obs.get('active_alerts', 'Unknown')
             except Exception as e:
                 print(f"Failed to connect to {ENV_URL}: {e}", flush=True)
                 return
@@ -75,14 +129,26 @@ Respond ONLY with valid JSON. Do not include markdown formatting."""
             for step in range(1, 9):
                 current_step = step
                 history_text = "\n".join(history[-4:]) if history else "None"
-                
+
                 terminal_out = obs.get('terminal_output', '')
-                terminal_snippet = terminal_out[-1500:] if terminal_out else "None" 
+                terminal_snippet = terminal_out[-1500:] if terminal_out else "None"
 
-                user_prompt = f"Alert: {obs.get('active_alerts', 'None')}\nHealth: {obs.get('system_health', 'Unknown')}%\nTerminal: {terminal_snippet}\nRecent History:\n{history_text}\n{error_msg_for_prompt}\nAction JSON:"
+                # 🧠 UPGRADE 1: Inject episodic memory into every prompt
+                memory_context = memory.recall(task_name)
 
-                # 🛡️ PERFECTIONIST AI UPGRADE: Fault Tolerance Retry Loop
+                user_prompt = (
+                    f"Alert: {obs.get('active_alerts', 'None')}\n"
+                    f"Health: {obs.get('system_health', 'Unknown')}%\n"
+                    f"Terminal: {terminal_snippet}\n"
+                    f"Recent History:\n{history_text}\n"
+                    f"{memory_context}\n"
+                    f"{error_msg_for_prompt}\n"
+                    f"Action JSON:"
+                )
+
+                # Fault tolerance retry loop
                 max_retries = 3
+                server_action = {"command": "error", "target": "error"}
                 for attempt in range(max_retries):
                     try:
                         completion = client.chat.completions.create(
@@ -92,25 +158,32 @@ Respond ONLY with valid JSON. Do not include markdown formatting."""
                                 {"role": "user", "content": user_prompt}
                             ],
                             temperature=0.0,
-                            max_tokens=200
+                            max_tokens=250
                         )
                         action_text = completion.choices[0].message.content.strip()
                         if "{" in action_text and "}" in action_text:
                             action_text = action_text[action_text.find("{"):action_text.rfind("}") + 1]
                         action_json = json.loads(action_text)
+
+                        # 🧠 UPGRADE 2: Read confidence score
+                        confidence = action_json.get("confidence", 1.0)
                         thought = action_json.get("thought", "No thought provided.")
-                        print(f"\n🧠 [AI THOUGHT - {task_name.upper()}]: {thought}", flush=True)
-                        server_action = {"command": action_json.get("command", "error"), "target": action_json.get("target", "error")}
+
+                        print(f"\n🧠 [AI THOUGHT - {task_name.upper()}] (Confidence: {confidence:.0%}): {thought}", flush=True)
+
+                        server_action = {
+                            "command": action_json.get("command", "error"),
+                            "target": action_json.get("target", "error")
+                        }
                         error = None
-                        error_msg_for_prompt = "" 
-                        break # Break loop if API call succeeds
-                    except Exception as e:
+                        error_msg_for_prompt = ""
+                        break
+                    except Exception:
                         if attempt == max_retries - 1:
                             server_action = {"command": "error", "target": "error"}
-                            error = "JSON/API Parse Error"
-                            error_msg_for_prompt = "PREVIOUS FAILED: API Error or Invalid JSON. Output ONLY JSON."
+                            error_msg_for_prompt = "PREVIOUS FAILED: Invalid JSON. Output ONLY valid JSON."
                         else:
-                            await asyncio.sleep(2) # Wait 2 seconds and retry if API fails
+                            await asyncio.sleep(2)
 
                 try:
                     step_res = await http.post(f"{ENV_URL}/step", json=server_action, timeout=10.0)
@@ -118,19 +191,17 @@ Respond ONLY with valid JSON. Do not include markdown formatting."""
                     obs = step_data["observation"]
                     reward = step_data["reward"]
                     done = step_data["done"]
-                    
+
                     if "[ERROR]" in obs.get('terminal_output', ''):
-                        error_msg_for_prompt = "PREVIOUS FAILED: Your command caused an error. Check target exact spelling."
+                        error_msg_for_prompt = "PREVIOUS FAILED: Command caused an error. Check target exact spelling."
                 except Exception:
                     reward = 0.05
                     done = True
-                    error = "Env connection failed"
 
                 rewards.append(reward)
                 log_action = f"{server_action['command']}('{server_action['target']}')"
-                
                 log_step(step, reward)
-                
+
                 hist_term = obs.get('terminal_output', '').split('\n')[-1] if obs.get('terminal_output') else "None"
                 history.append(f"Step {step}: ran {log_action} -> Result: {hist_term[:100]}")
 
@@ -148,10 +219,46 @@ Respond ONLY with valid JSON. Do not include markdown formatting."""
 
             log_end(task=task_name, score=score, steps=current_step)
 
+            # 🧠 UPGRADE 1: Store this task result in episodic memory
+            memory.store(
+                task=task_name,
+                alert=last_alert,
+                solution_cmd=server_action["command"],
+                solution_target=server_action["target"],
+                success=success,
+                steps=current_step
+            )
+
+            # Track result for analytics
+            all_results.append({
+                "task": task_name,
+                "success": success,
+                "score": score,
+                "steps": current_step
+            })
+
             try:
                 await http.get(f"{ENV_URL}/grade/{task_name}")
             except Exception:
-                pass 
+                pass
+
+        # 🧠 UPGRADE 3: Print final performance analytics summary
+        print("\n" + "="*60, flush=True)
+        print("📊 KUBESRE AGENT PERFORMANCE ANALYTICS", flush=True)
+        print("="*60, flush=True)
+        total_score = 0
+        wins = 0
+        for r in all_results:
+            status = "✅ RESOLVED" if r["success"] else "❌ FAILED"
+            print(f"{r['task'].upper():<10} | {status} | Score: {r['score']:.3f} | Steps: {r['steps']}", flush=True)
+            total_score += r["score"]
+            if r["success"]:
+                wins += 1
+        avg = total_score / len(all_results) if all_results else 0
+        win_rate = (wins / len(all_results)) * 100 if all_results else 0
+        print("="*60, flush=True)
+        print(f"🏆 WIN RATE: {win_rate:.1f}% | AVG SCORE: {avg:.3f}", flush=True)
+        print("="*60, flush=True)
 
 if __name__ == "__main__":
     asyncio.run(main())
