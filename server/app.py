@@ -1,363 +1,477 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
+from datetime import datetime, UTC
 import random
-import datetime
+import re
 
 app = FastAPI(
     title="KubeSRE OpenEnv",
     description="A dynamic, time-sensitive environment for testing SRE AI Agents.",
-    version="1.0.0"
+    version="2.0.0"
 )
+
+
+class AgentAction(BaseModel):
+    command: str = Field(..., description="Command/tool selected by the agent")
+    target: str = Field(..., description="Exact target for the command")
+
+
+class EpisodeState:
+    def __init__(self) -> None:
+        self.task: str = ""
+        self.active_alerts: str = ""
+        self.system_health: float = 100.0
+        self.terminal_output: str = ""
+        self.done: bool = False
+        self.success: bool = False
+        self.step_count: int = 0
+        self.max_steps: int = 8
+        self.history: List[Dict[str, Any]] = []
+        self.started_at: Optional[str] = None
+        self.finished_at: Optional[str] = None
+
+        self.root_cause: Dict[str, Any] = {}
+        self.dynamic_values: Dict[str, Any] = {}
+        self.allowed_actions: Dict[str, Any] = {}
+        self.seen_targets: set = set()
+
+    def reset(self) -> None:
+        self.__init__()
+
+
+STATE = EpisodeState()
+
+
+def now_utc() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def noisy_lines() -> List[str]:
+    pool = [
+        '127.0.0.1 - - "GET /healthz HTTP/1.1" 200',
+        '127.0.0.1 - - "GET /ready HTTP/1.1" 200',
+        'worker heartbeat ok',
+        'background cron sync complete',
+        'scheduler tick processed',
+        'cache warmup completed',
+        'HTTP 304 /favicon.ico',
+        'HTTP 200 /metrics scrape',
+        'kube-proxy routine reconciliation complete',
+        'sidecar telemetry flush ok',
+        'db connection pool healthy',
+        'nginx keepalive check passed',
+        'daemonset monitor idle',
+        'pod lifecycle hook completed',
+        'service mesh trace export complete',
+    ]
+    random.shuffle(pool)
+    return pool[:10]
+
+
+def build_log_blob(needle: str) -> str:
+    lines = noisy_lines()
+    insert_at = random.randint(2, min(8, len(lines)))
+    lines.insert(insert_at, needle)
+    return "\n".join(lines)
+
+
+def degrade_health_if_needed(success_now: bool) -> None:
+    if not success_now:
+        STATE.system_health = max(0.0, STATE.system_health - 15.0)
+    if STATE.system_health <= 0:
+        STATE.done = True
+        STATE.success = False
+        STATE.terminal_output = "[FATAL] Cluster health reached 0%. Fatal crash."
+
+
+def build_observation() -> Dict[str, Any]:
+    return {
+        "active_alerts": STATE.active_alerts,
+        "system_health": round(STATE.system_health, 2),
+        "terminal_output": STATE.terminal_output,
+        "step_count": STATE.step_count,
+        "done": STATE.done,
+    }
+
+
+def record_step(command: str, target: str, reward: float, note: str) -> None:
+    STATE.history.append({
+        "step": STATE.step_count,
+        "command": command,
+        "target": target,
+        "reward": reward,
+        "health": round(STATE.system_health, 2),
+        "note": note,
+        "timestamp": now_utc(),
+    })
+
+
+def finalize_episode(success: bool) -> None:
+    STATE.done = True
+    STATE.success = success
+    STATE.finished_at = now_utc()
+
+
+def repeated_same_action(command: str, target: str) -> bool:
+    return any(h["command"] == command and h["target"] == target for h in STATE.history)
+
+
+def get_episode_grade() -> Dict[str, Any]:
+    optimal_steps = STATE.root_cause.get("optimal_steps", 4)
+    success_bonus = 1.0 if STATE.success else 0.0
+    health_score = max(0.0, STATE.system_health / 100.0)
+    efficiency_score = min(1.0, optimal_steps / max(STATE.step_count, 1))
+    penalty_count = sum(1 for h in STATE.history if h["reward"] < 0.1)
+    penalty_factor = max(0.0, 1.0 - (0.12 * penalty_count))
+
+    raw_score = (0.45 * success_bonus) + (0.30 * health_score) + (0.25 * efficiency_score)
+    normalized_score = max(0.0, min(1.0, raw_score * penalty_factor))
+
+    return {
+        "task": STATE.task,
+        "success": STATE.success,
+        "steps_taken": STATE.step_count,
+        "optimal_steps": optimal_steps,
+        "remaining_health": round(STATE.system_health, 2),
+        "penalty_count": penalty_count,
+        "normalized_score": round(normalized_score, 3),
+        "history": STATE.history,
+        "started_at": STATE.started_at,
+        "finished_at": STATE.finished_at,
+    }
+
+
+def setup_easy() -> None:
+    pod_id = random.randint(1000, 9999)
+    pod_name = f"auth-service-{pod_id}"
+
+    STATE.active_alerts = f"[HighLatency] auth-service pod {pod_name} latency critical"
+    STATE.root_cause = {
+        "kind": "restart_pod",
+        "pod_name": pod_name,
+        "optimal_steps": 2,
+    }
+    STATE.dynamic_values = {
+        "pod_name": pod_name,
+    }
+    STATE.allowed_actions = {
+        "service": "auth-service",
+        "pod": pod_name,
+    }
+    STATE.terminal_output = "Alert received. High latency detected on auth-service."
+
+
+def setup_medium() -> None:
+    STATE.active_alerts = "[DatabaseConnectionFailing] database auth failures spiking after bad deployment"
+    STATE.root_cause = {
+        "kind": "rollback_deploy",
+        "service": "database",
+        "optimal_steps": 1,
+    }
+    STATE.dynamic_values = {
+        "service": "database",
+    }
+    STATE.allowed_actions = {
+        "service": "database",
+    }
+    STATE.terminal_output = "Alert received. Database auth failures increasing rapidly."
+
+
+def setup_hard() -> None:
+    attacker_ip = f"{random.randint(11, 223)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,254)}"
+
+    STATE.active_alerts = "[TrafficSpike] ingress nodes CPU critical, suspected Layer 7 DDoS"
+    STATE.root_cause = {
+        "kind": "block_ip",
+        "ip": attacker_ip,
+        "optimal_steps": 2,
+    }
+    STATE.dynamic_values = {
+        "attacker_ip": attacker_ip,
+    }
+    STATE.allowed_actions = {
+        "service": "ingress-nginx",
+        "ip": attacker_ip,
+    }
+    STATE.terminal_output = "Alert received. Ingress traffic spike detected."
+
+
+def setup_extreme() -> None:
+    node_num = random.randint(3, 18)
+    node_name = f"worker-node-{node_num}"
+    pid = str(random.randint(10000, 99999))
+
+    STATE.active_alerts = f"[OutOfMemory] {node_name} memory critical, OOM kills observed"
+    STATE.root_cause = {
+        "kind": "kill_process",
+        "node_name": node_name,
+        "pid": pid,
+        "optimal_steps": 2,
+    }
+    STATE.dynamic_values = {
+        "node_name": node_name,
+        "pid": pid,
+    }
+    STATE.allowed_actions = {
+        "node": node_name,
+        "pid": pid,
+    }
+    STATE.terminal_output = f"Alert received. OOM detected on {node_name}."
+
+
+def setup_insane() -> None:
+    STATE.active_alerts = "[CheckoutAPI500] frontend-service returning HTTP 500 due to cascading downstream failure"
+    STATE.root_cause = {
+        "kind": "flush_cache",
+        "chain": ["frontend-service", "payment-gateway", "redis-cache-cluster"],
+        "cache": "redis-cache-cluster",
+        "optimal_steps": 4,
+    }
+    STATE.dynamic_values = {
+        "chain": ["frontend-service", "payment-gateway", "redis-cache-cluster"],
+        "cache": "redis-cache-cluster",
+    }
+    STATE.allowed_actions = {
+        "services": ["frontend-service", "payment-gateway", "redis-cache-cluster"],
+        "cache": "redis-cache-cluster",
+    }
+    STATE.terminal_output = "Alert received. Checkout API returning 500 errors."
+
+
+TASK_SETUP = {
+    "easy": setup_easy,
+    "medium": setup_medium,
+    "hard": setup_hard,
+    "extreme": setup_extreme,
+    "insane": setup_insane,
+}
+
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
     return """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>KubeSRE | Autonomous AI Agent</title>
-        <style>
-            body { background-color: #0b0f19; color: #c9d1d9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; }
-            .header { border-bottom: 2px solid #30363d; padding-bottom: 15px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
-            h1 { color: #58a6ff; margin: 0; font-size: 26px; text-shadow: 0 0 12px rgba(88, 166, 255, 0.6); }
-            .subtitle { margin-top: 8px; font-size: 15px; color: #8b949e; }
-            .participant-name { color: #f0e68c; font-weight: bold; letter-spacing: 1px; padding: 2px 6px; background: rgba(240, 230, 140, 0.1); border-radius: 4px; border: 1px solid rgba(240, 230, 140, 0.3); }
-            .ai-model { color: #d2a8ff; font-family: monospace; font-size: 14px; }
-            .live-badge { background-color: #238636; color: white; padding: 6px 10px; border-radius: 4px; font-weight: bold; font-size: 12px; letter-spacing: 1px; animation: pulse 2s infinite; box-shadow: 0 0 10px rgba(35, 134, 54, 0.5); }
-            @keyframes pulse { 0% { opacity: 1; box-shadow: 0 0 10px rgba(35, 134, 54, 0.8); } 50% { opacity: 0.6; box-shadow: 0 0 2px rgba(35, 134, 54, 0.3); } 100% { opacity: 1; box-shadow: 0 0 10px rgba(35, 134, 54, 0.8); } }
-            .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-            .card { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.4); }
-            .card h2 { margin-top: 0; color: #8b949e; font-size: 16px; text-transform: uppercase; letter-spacing: 1px; }
-            .health-bar-bg { background-color: #21262d; border-radius: 10px; height: 25px; width: 100%; overflow: hidden; margin-top: 10px; border: 1px solid #30363d; }
-            .health-bar-fill { height: 100%; width: 100%; transition: width 0.5s ease-in-out, background-color 0.5s ease-in-out; }
-            .stat-value { font-size: 36px; font-weight: bold; margin: 10px 0; }
-            .alert-box { background-color: rgba(248, 81, 73, 0.1); border-left: 4px solid #f85149; padding: 12px 15px; margin-top: 10px; font-family: monospace; color: #ff7b72; border-radius: 0 4px 4px 0; }
-            .resolved-box { background-color: rgba(46, 160, 67, 0.1); border-left: 4px solid #2ea043; padding: 12px 15px; margin-top: 10px; font-family: monospace; color: #3fb950; border-radius: 0 4px 4px 0; }
-            .info-text { font-size: 14px; color: #8b949e; line-height: 1.5; }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <div>
-                <h1>🚨 KubeSRE Mission Control</h1>
-                <div class="subtitle">
-                    Engineered by: <span class="participant-name">Rishwanth Raju</span> | 
-                    Powered by: <span class="ai-model">Qwen-2.5-72B-Instruct</span>
-                </div>
-            </div>
-            <div class="live-badge">● LIVE TELEMETRY</div>
-        </div>
-        <div class="grid">
-            <div class="card">
-                <h2>Cluster Health (Temporal Degradation)</h2>
-                <div class="stat-value" id="health-text">100.0%</div>
-                <div class="health-bar-bg">
-                    <div id="health-bar" class="health-bar-fill" style="background-color: #2ea043;"></div>
-                </div>
-                <p class="info-text">Health drops by 15% for every inefficient step taken by the AI agent. Fatal crash at 0%.</p>
-            </div>
-            <div class="card">
-                <h2>Active Incident Status</h2>
-                <div class="stat-value">Task: <span id="task-level" style="color: #d2a8ff; text-transform: uppercase;">STANDBY</span></div>
-                <div style="font-size: 18px; color: #8b949e;">Current Step: <span id="step-count" style="font-weight: bold; color: #fff;">0</span> / 8</div>
-                <div id="alert-container">
-                    <div class="resolved-box">Awaiting POST /reset to initialize new incident.</div>
-                </div>
-            </div>
-        </div>
-        <div class="card" style="margin-top: 20px;">
-            <h2>System Terminal Stream</h2>
-            <p class="info-text">To watch the Autonomous Agent diagnose and mitigate the cascading failure live, execute <code>python inference.py</code> in the terminal.</p>
-        </div>
-        <script>
-            function updateDashboard() {
-                fetch('/state')
-                    .then(response => response.json())
-                    .then(data => {
-                        const health = Math.max(0, data.health);
-                        document.getElementById('health-text').innerText = health.toFixed(1) + '%';
-                        const bar = document.getElementById('health-bar');
-                        bar.style.width = health + '%';
-                        if (health > 60) { bar.style.backgroundColor = '#2ea043'; document.getElementById('health-text').style.color = '#2ea043'; }
-                        else if (health > 20) { bar.style.backgroundColor = '#d29922'; document.getElementById('health-text').style.color = '#d29922'; }
-                        else { bar.style.backgroundColor = '#f85149'; document.getElementById('health-text').style.color = '#f85149'; }
-                        document.getElementById('step-count').innerText = data.step;
-                        document.getElementById('task-level').innerText = data.task;
-                        const alertBox = document.getElementById('alert-container');
-                        if (data.resolved) {
-                            alertBox.innerHTML = '<div class="resolved-box">[SUCCESS] Root cause mitigated. System stabilized by AI Agent.</div>';
-                        } else if (data.health <= 0) {
-                            alertBox.innerHTML = '<div class="alert-box">[FATAL] SYSTEM CRASHED. SLA Violated.</div>';
-                        } else if (data.step > 0) {
-                            alertBox.innerHTML = '<div class="alert-box">[ACTIVE ALERT] Incident ongoing. AI is mapping the service cascade...</div>';
-                        } else {
-                            alertBox.innerHTML = '<div class="resolved-box">Awaiting agent connection...</div>';
-                        }
-                    })
-                    .catch(err => console.error("Waiting for server...", err));
-            }
-            setInterval(updateDashboard, 1000);
-            updateDashboard();
-        </script>
-    </body>
+    <html>
+      <head><title>KubeSRE OpenEnv</title></head>
+      <body style="font-family: Arial, sans-serif; padding: 2rem;">
+        <h1>KubeSRE OpenEnv</h1>
+        <p>Health drops by 15% for every inefficient step. Fatal crash at 0%.</p>
+        <p>Run <code>python inference.py</code> in the terminal to watch the autonomous SRE agent.</p>
+      </body>
     </html>
     """
 
-class Action(BaseModel):
-    command: str = Field(..., description="The terminal command to execute.")
-    target: str = Field(..., description="The target entity.")
 
-class Observation(BaseModel):
-    terminal_output: str = Field(..., description="The simulated stdout terminal response.")
-    system_health: float = Field(..., description="Current cluster health (0.0 to 100.0).")
-    active_alerts: str = Field(..., description="The live alert string.")
+@app.post("/reset")
+def reset(task: str):
+    task = task.lower().strip()
+    if task not in TASK_SETUP:
+        raise HTTPException(status_code=400, detail=f"Unknown task '{task}'")
 
-class StepResponse(BaseModel):
-    observation: Observation
-    reward: float
-    done: bool
-    info: Dict[str, Any] = Field(default_factory=dict)
+    STATE.reset()
+    STATE.task = task
+    STATE.started_at = now_utc()
 
-class ResetResponse(BaseModel):
-    observation: Observation
+    TASK_SETUP[task]()
 
-class ServerState:
-    def __init__(self):
-        self.task_level = "standby"
-        self.step = 0
-        self.health = 100.0
-        self.resolved = False
-        self.attacker_ip = f"{random.randint(10,255)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,254)}"
-        self.failing_pod = f"auth-service-{random.randint(1000,9999)}"
-        self.bad_version = f"v{random.randint(2,5)}.{random.randint(0,9)}.{random.randint(0,9)}"
-        self.cpu_spike = random.uniform(98.0, 100.0)
-        self.worker_node = f"worker-node-{random.randint(1, 20)}"
-        self.leak_pid = str(random.randint(10000, 99999))
-
-state = ServerState()
-
-def generate_log_noise(service: str, count: int) -> list:
-    logs = []
-    for _ in range(count):
-        time_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        status = random.choice([200, 200, 201, 304])
-        endpoint = random.choice(["/health", "/metrics", "/api/v1/status", "/ping", "/ready"])
-        ip = f"10.0.{random.randint(1,20)}.{random.randint(1,255)}"
-        logs.append(f"{time_str} [INFO] {service}: HTTP GET {endpoint} {status} from {ip} - {random.randint(2,45)}ms")
-    return logs
-
-def generate_top_noise(count: int) -> list:
-    processes = []
-    users = ["root", "ubuntu", "nginx", "postgres", "datadog"]
-    cmds = ["nginx: worker process", "python3 main.py", "postgres: checkpointer", "sshd: /usr/sbin/sshd", "agent"]
-    for _ in range(count):
-        pid = random.randint(100, 9999)
-        user = random.choice(users)
-        cpu = round(random.uniform(0.0, 1.5), 1)
-        mem = round(random.uniform(0.1, 2.0), 1)
-        cmd = random.choice(cmds)
-        processes.append(f"{pid:<6} {user:<8} 20   0    2.1G    0.2G   0.0G  {cpu:<4}  {mem:<4}  {cmd}")
-    return processes
-
-def get_dynamic_tasks(s: ServerState) -> Dict[str, Any]:
     return {
-        "standby": {"alert": "Awaiting connection...", "solution_cmd": "", "solution_target": ""},
-        "easy": {
-            "alert": f"[PROMETHEUS] HighLatency - {s.failing_pod} p99 > 2000ms",
-            "solution_cmd": "restart_pod",
-            "solution_target": s.failing_pod
-        },
-        "medium": {
-            "alert": "[DATADOG] DatabaseConnectionFailing - Active queries dropping",
-            "solution_cmd": "rollback_deploy",
-            "solution_target": "database"
-        },
-        "hard": {
-            "alert": "[CLOUDFLARE] TrafficSpike - CPU critical on ingress nodes",
-            "solution_cmd": "block_ip",
-            "solution_target": s.attacker_ip
-        },
-        "extreme": {
-            "alert": f"[AWS CLOUDWATCH] OutOfMemory - {s.worker_node} RAM at 99.9%",
-            "solution_cmd": "kill_process",
-            "solution_target": s.leak_pid
-        },
-        "insane": {
-            "alert": "[PAGERDUTY] CRITICAL: Checkout API is throwing 500 errors on 'frontend-service'",
-            "solution_cmd": "flush_cache",
-            "solution_target": "redis-cache-cluster"
-        }
+        "message": f"Task '{task}' initialized.",
+        "observation": build_observation(),
     }
 
-@app.post("/reset", response_model=ResetResponse)
-def reset(task: str = "hard"):
-    global state
-    state = ServerState()
-    state.task_level = task if task in ["easy", "medium", "hard", "extreme", "insane"] else "easy"
-    tasks = get_dynamic_tasks(state)
-    return ResetResponse(
-        observation=Observation(
-            terminal_output="[KubeSRE Terminal] Connected. Waiting for AI reasoning to initiate...",
-            system_health=state.health,
-            active_alerts=tasks[state.task_level]["alert"]
-        )
-    )
 
-@app.post("/step", response_model=StepResponse)
-def step(action: Action):
-    global state
-    state.step += 1
-    tasks = get_dynamic_tasks(state)
-    task_info = tasks[state.task_level]
+@app.post("/step")
+def step(action: AgentAction):
+    if not STATE.task:
+        raise HTTPException(status_code=400, detail="Environment not initialized. Call /reset first.")
 
-    if not state.resolved:
-        state.health -= 15.0
+    if STATE.done:
+        return {
+            "observation": build_observation(),
+            "reward": 0.0,
+            "done": True,
+            "info": "Episode already finished."
+        }
 
-    reward = 0.0
-    terminal_out = f"Command '{action.command}' executed on '{action.target}'. No immediate resolution."
+    STATE.step_count += 1
 
-    if action.command == "get_metrics":
-        reward = 0.15
-        terminal_out = f"[SYSTEM METRICS - {action.target}]\nCPU: {random.randint(10,99)}% | RAM: {random.randint(10,99)}% | IOPS: {random.randint(100,5000)}"
+    command = action.command.strip()
+    target = action.target.strip()
+    success_now = False
+    reward = 0.05
+    note = "Inefficient or incorrect action."
 
-    elif action.command == "get_logs":
-        reward = 0.20
-        anomaly_log = ""
-        if state.task_level == "easy" and action.target == state.failing_pod:
-            anomaly_log = f"[ERROR] {state.failing_pod}: Timeout connecting. Thread pool exhausted."
-        elif state.task_level == "medium" and action.target == "database":
-            anomaly_log = f"[FATAL] Password auth failed. Hint: Bad credentials in deployment {state.bad_version}."
-        elif state.task_level == "hard" and "ingress" in action.target:
-            anomaly_log = f"[WARN] ingress-nginx: Layer 7 DDoS attack from {state.attacker_ip}."
-        elif state.task_level == "insane":
-            if action.target == "frontend-service":
-                anomaly_log = "[ERROR] frontend-service: 504 Gateway Timeout. Failed to reach 'payment-gateway' on port 8080."
-            elif action.target == "payment-gateway":
-                anomaly_log = "[FATAL] payment-gateway: Connection refused. Cannot communicate with 'redis-cache-cluster'."
-            elif action.target == "redis-cache-cluster":
-                anomaly_log = "[OOM] redis-cache-cluster: Cache memory is full. Cannot accept writes. Requires command 'flush_cache'."
-
-        noise = generate_log_noise(action.target, 15)
-        if anomaly_log:
-            insert_idx = random.randint(2, 12)
-            noise.insert(insert_idx, anomaly_log)
-        terminal_out = f"[RAW SYSTEM LOGS - {action.target}]\n" + "\n".join(noise)
-
-    elif action.command == "run_top":
-        if state.task_level == "extreme" and action.target == state.worker_node:
-            reward = 0.30
-            noise = generate_top_noise(12)
-            anomaly_top = f"{state.leak_pid:<6} root     20   0    85.2G   64.1G  2.1G  15.0  85.5  java -jar memory_leak.jar"
-            insert_idx = random.randint(1, 10)
-            noise.insert(insert_idx, anomaly_top)
-            header = "PID    USER      PR   NI   VIRT    RES    SHR   %CPU  %MEM  COMMAND"
-            terminal_out = f"[TOP OUTPUT - {action.target}]\n{header}\n" + "\n".join(noise)
-        else:
-            noise = generate_top_noise(12)
-            header = "PID    USER      PR   NI   VIRT    RES    SHR   %CPU  %MEM  COMMAND"
-            terminal_out = f"[TOP OUTPUT - {action.target}]\n{header}\n" + "\n".join(noise)
-
-    elif action.command == task_info["solution_cmd"] and action.target == task_info["solution_target"]:
-        state.resolved = True
-        state.health = 100.0
-        reward = 0.95
-        terminal_out = f"[SUCCESS] Root cause mitigated. {action.target} stabilized. Incident closed."
-
-    else:
+    if repeated_same_action(command, target):
         reward = 0.05
-        terminal_out = f"[ERROR] Action '{action.command}' on '{action.target}' failed. Health continues to drop."
+        STATE.terminal_output = f"[WARN] Repeated action detected: {command}('{target}')"
+        degrade_health_if_needed(False)
+        record_step(command, target, reward, "Repeated action penalty")
+        return {
+            "observation": build_observation(),
+            "reward": reward,
+            "done": STATE.done,
+            "info": "Repeated action penalty"
+        }
 
-    reward = max(0.05, min(0.95, reward))
-    done = state.resolved or state.health <= 0 or state.step >= 8
+    if STATE.task == "easy":
+        pod_name = STATE.dynamic_values["pod_name"]
 
-    if state.health <= 0:
-        terminal_out = "[FATAL] SYSTEM CRASHED. All nodes unresponsive."
+        if command == "get_metrics" and target == "auth-service":
+            reward = 0.15
+            note = "Metrics show latency concentrated around a single auth pod."
+            STATE.terminal_output = build_log_blob(
+                f"[WARN] p95 latency elevated on pod {pod_name}; upstream dependencies normal"
+            )
 
-    obs = Observation(
-        terminal_output=terminal_out,
-        system_health=state.health,
-        active_alerts="[RESOLVED] All systems operational." if state.resolved else task_info["alert"]
-    )
+        elif command == "get_logs" and target == "auth-service":
+            reward = 0.20
+            note = "Logs hint that one auth pod is unstable."
+            STATE.terminal_output = build_log_blob(
+                f"[ERROR] auth-service routing instability traced to pod {pod_name}"
+            )
 
-    return StepResponse(observation=obs, reward=reward, done=done, info={"step": state.step})
+        elif command == "restart_pod" and target == pod_name:
+            reward = 0.95
+            note = "Correct mitigation applied."
+            STATE.terminal_output = f"[SUCCESS] Restarted pod {pod_name}. Latency recovered."
+            success_now = True
+            finalize_episode(True)
 
-@app.api_route("/state", methods=["GET", "POST"])
-def get_state():
-    return {"step": state.step, "health": state.health, "resolved": state.resolved, "task": state.task_level}
+    elif STATE.task == "medium":
+        if command == "rollback_deploy" and target == "database":
+            reward = 0.95
+            note = "Correct rollback applied."
+            STATE.terminal_output = "[SUCCESS] Rolled back database deployment. Auth failures resolved."
+            success_now = True
+            finalize_episode(True)
 
-@app.get("/tasks")
-def list_tasks():
-    return [
-        {"id": "easy", "description": "Pod restart", "grader": "/grade/easy"},
-        {"id": "medium", "description": "DB rollback", "grader": "/grade/medium"},
-        {"id": "hard", "description": "IP block", "grader": "/grade/hard"},
-        {"id": "extreme", "description": "Kill process", "grader": "/grade/extreme"},
-        {"id": "insane", "description": "Cache flush", "grader": "/grade/insane"}
-    ]
+        elif command == "get_logs" and target == "database":
+            reward = 0.20
+            note = "Helpful reconnaissance."
+            STATE.terminal_output = build_log_blob(
+                "[ERROR] database authentication failures started immediately after deployment rollout"
+            )
 
-TASK_SCORES = {
-    "easy":    {"score": 0.85, "task": "easy",    "description": "Pod restart - solved in 2 steps"},
-    "medium":  {"score": 0.80, "task": "medium",  "description": "DB rollback - solved in 2 steps"},
-    "hard":    {"score": 0.75, "task": "hard",    "description": "IP block - solved in 3 steps"},
-    "extreme": {"score": 0.78, "task": "extreme", "description": "PID kill - solved in 3 steps"},
-    "insane":  {"score": 0.90, "task": "insane",  "description": "Cache flush - solved in 4 steps"},
-}
+    elif STATE.task == "hard":
+        attacker_ip = STATE.dynamic_values["attacker_ip"]
+
+        if command == "get_logs" and target == "ingress-nginx":
+            reward = 0.20
+            note = "Logs expose attacker IP."
+            STATE.terminal_output = build_log_blob(
+                f"[FATAL] Layer7 flood pattern detected from {attacker_ip}"
+            )
+
+        elif command == "block_ip" and target == attacker_ip:
+            reward = 0.95
+            note = "Correct attacker blocked."
+            STATE.terminal_output = f"[SUCCESS] Blocked attacker IP {attacker_ip}. Traffic normalized."
+            success_now = True
+            finalize_episode(True)
+
+    elif STATE.task == "extreme":
+        node_name = STATE.dynamic_values["node_name"]
+        pid = STATE.dynamic_values["pid"]
+
+        if command == "run_top" and target == node_name:
+            reward = 0.30
+            note = "Top output reveals rogue PID."
+            STATE.terminal_output = "\n".join([
+                "top - 14:02:11 up 10 days",
+                "PID USER PR NI VIRT RES SHR S %CPU %MEM TIME+ COMMAND",
+                f"{pid} root 20 0 4.2g 3.1g 1200 S 93.2 85.5 12:22.19 java -jar payment-worker.jar",
+                "1221 root 20 0 125m 24m 9m S 1.0 0.5 00:00.92 sshd",
+            ])
+
+        elif command == "kill_process" and target == pid:
+            reward = 0.95
+            note = "Correct PID terminated."
+            STATE.terminal_output = f"[SUCCESS] Killed process {pid}. Memory pressure resolved on {node_name}."
+            success_now = True
+            finalize_episode(True)
+
+    elif STATE.task == "insane":
+        if command == "get_logs" and target == "frontend-service":
+            reward = 0.20
+            note = "Frontend logs reveal downstream timeout."
+            STATE.terminal_output = build_log_blob(
+                "[ERROR] frontend-service timeout while calling payment-gateway"
+            )
+
+        elif command == "get_logs" and target == "payment-gateway":
+            reward = 0.20
+            note = "Payment logs reveal cache dependency failure."
+            STATE.terminal_output = build_log_blob(
+                "[ERROR] payment-gateway connection refused to redis-cache-cluster"
+            )
+
+        elif command == "get_logs" and target == "redis-cache-cluster":
+            reward = 0.25
+            note = "Redis logs reveal cache saturation."
+            STATE.terminal_output = build_log_blob(
+                "[FATAL] redis-cache-cluster maxmemory reached, writes rejected"
+            )
+
+        elif command == "flush_cache" and target == "redis-cache-cluster":
+            seen_chain = {h['target'] for h in STATE.history if h['command'] == 'get_logs'}
+            if "frontend-service" in seen_chain and "payment-gateway" in seen_chain:
+                reward = 0.95
+                note = "Correct cascade mitigation applied."
+                STATE.terminal_output = "[SUCCESS] Flushed redis-cache-cluster. Checkout API recovered."
+                success_now = True
+                finalize_episode(True)
+            else:
+                reward = 0.10
+                note = "Mitigation guessed too early without enough tracing."
+                STATE.terminal_output = "[WARN] Cache flush attempted before tracing full cascade."
+
+        elif command == "get_metrics" and target in {"frontend-service", "payment-gateway"}:
+            reward = 0.15
+            note = "Some signal, but less useful than logs."
+            STATE.terminal_output = build_log_blob(
+                f"[WARN] elevated error-rate observed on {target}"
+            )
+
+    if not success_now and not STATE.done:
+        degrade_health_if_needed(False)
+
+    if STATE.step_count >= STATE.max_steps and not STATE.done:
+        finalize_episode(False)
+        STATE.terminal_output = "[FATAL] Step limit exceeded before incident resolution."
+
+    record_step(command, target, reward, note)
+
+    return {
+        "observation": build_observation(),
+        "reward": reward,
+        "done": STATE.done,
+        "info": note
+    }
+
 
 @app.get("/grade/{task_name}")
-def grade(task_name: str):
-    if task_name not in TASK_SCORES:
-        return {"task": task_name, "score": 0.05}
-    result = TASK_SCORES[task_name]
-    return {"task": result["task"], "score": result["score"]}
+def grade_task(task_name: str):
+    if not STATE.task:
+        raise HTTPException(status_code=400, detail="No active task. Call /reset first.")
 
-@app.post("/grade/{task_name}")
-def grade_post(task_name: str):
-    if task_name not in TASK_SCORES:
-        return {"task": task_name, "score": 0.05}
-    result = TASK_SCORES[task_name]
-    return {"task": result["task"], "score": result["score"]}
+    if STATE.task != task_name:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Requested grade for '{task_name}' but active task is '{STATE.task}'."
+        )
 
-# ✅ NEW: /analytics endpoint for judges to see full agent architecture
-@app.get("/analytics")
-def get_analytics():
+    return get_episode_grade()
+
+
+@app.get("/state")
+def get_state():
     return {
-        "agent": "Qwen/Qwen2.5-72B-Instruct",
-        "developer": "Rishwanth Raju",
-        "architecture": "ReAct + Episodic Memory + Confidence Scoring",
-        "tasks_available": 5,
-        "difficulty_levels": ["easy", "medium", "hard", "extreme", "insane"],
-        "temporal_degradation_per_step": "15%",
-        "max_steps_before_crash": 6,
-        "context_window_chars": 1500,
-        "model_temperature": 0.0,
-        "innovations": [
-            "Episodic Memory System - Agent remembers previous incidents",
-            "Confidence-Based Reasoning - Agent scores its own certainty",
-            "Zero-Shot Self-Healing Loop - Auto-corrects bad JSON",
-            "Needle in a Haystack Log Parser - 1500 char context window",
-            "Few-Shot Deterministic Playbook - Prevents hallucination",
-            "Fault Tolerance Retry Loop - 3 retries with exponential backoff",
-            "Google Container Registry Mirror - Bypasses Docker Hub limits"
-        ],
-        "endpoints": {
-            "reset": "POST /reset?task={easy|medium|hard|extreme|insane}",
-            "step": "POST /step",
-            "state": "GET /state",
-            "grade": "GET /grade/{task_name}",
-            "tasks": "GET /tasks",
-            "analytics": "GET /analytics"
-        }
+        "task": STATE.task,
+        "done": STATE.done,
+        "success": STATE.success,
+        "step_count": STATE.step_count,
+        "system_health": STATE.system_health,
+        "history": STATE.history,
+        "root_cause": STATE.root_cause,
     }
-
-def main():
-    import uvicorn
-    import os
-    port = int(os.environ.get("PORT", 7860))
-    uvicorn.run("server.app:app", host="0.0.0.0", port=port)
-
-if __name__ == "__main__":
-    main()
