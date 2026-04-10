@@ -1,3 +1,15 @@
+---
+title: 🛡️ KubeSRE: Autonomous SRE Agent
+emoji: 🚀
+colorFrom: blue
+colorTo: green
+sdk: fastapi
+sdk_version: 0.104.1
+python_version: 3.11
+app_file: app.py
+pinned: false
+---
+
 # 🛡️ KubeSRE: Autonomous SRE Agent
 
 **100% Win Rate** across 5 incident tiers. Fixed rollback syntax hallucination (80% → 100%).
@@ -12,6 +24,7 @@
 | INSANE | 100% | 3.0 | 0.950 |
 
 **Overall: 100% Win Rate | 0.950 Avg Score**
+**Proof: [KUBESRE_PROOF_20260410_0850.json](./KUBESRE_PROOF_20260410_0850.json)**
 
 ## 🚀 Live Demo
 ```bash
@@ -26,12 +39,16 @@ python inference.py  # Watch agent solve live
 - Confidence gating (>85% before action)
 - Dynamic targets (random pod/IP/PID)
 
-## 📈 Proof
-[![Benchmark Proof](./KUBESRE_PROOF_*.json)](./KUBESRE_PROOF_*.json)
-
 ## 🛠️ Setup
 ```bash
 pip install -r requirements.txt
 uvicorn app:app --port 7860
 python inference.py
 ```
+
+## 📈 OpenEnv Tasks
+- **EASY**: Pod latency → `kubectl rollout restart`
+- **MEDIUM**: DB credentials → Rollback deployment  
+- **HARD**: DDoS → Block attacker IP
+- **EXTREME**: Memory leak → Kill PID
+- **INSANE**: Microservice cascade → Multi-step recovery
