@@ -1,5 +1,5 @@
 ---
-title: 🛡️ KubeSRE: Autonomous SRE Agent
+title: 🛡️ KubeSRE: Autonomous SRE Environment
 emoji: 🚀
 colorFrom: blue
 colorTo: green
@@ -10,45 +10,45 @@ app_file: app.py
 pinned: false
 ---
 
-# 🛡️ KubeSRE: Autonomous SRE Agent
+# 🛡️ KubeSRE: Autonomous SRE Environment
 
-**100% Win Rate** across 5 incident tiers. Fixed rollback syntax hallucination (80% → 100%).
+A **high-fidelity OpenEnv-compatible SRE simulation** for evaluating autonomous agents under **realistic production failure conditions**.
 
-## 🏆 Benchmark Results (15/15 runs)
-| Task | Success | Steps | Score |
-|------|---------|-------|-------|
-| EASY | 100% | 3.0 | 0.950 |
-| MEDIUM | 100% | 1.0 | 0.950 |
-| HARD | 100% | 2.0 | 0.950 |
-| EXTREME | 100% | 2.0 | 0.950 |
-| INSANE | 100% | 3.0 | 0.950 |
+---
 
-**Overall: 100% Win Rate | 0.950 Avg Score**
-**Proof: [KUBESRE_PROOF_20260410_0850.json](./KUBESRE_PROOF_20260410_0850.json)**
+# 🚀 What Makes This Different
 
-## 🚀 Live Demo
-```bash
-uvicorn app:app --port 7860
-python inference.py  # Watch agent solve live
-```
+Most environments allow brute-force guessing.
 
-## 💡 Innovations
-- Temporal health degradation (-15% per wrong step)
-- Noisy production logs 
-- Episodic memory (remembers solutions)
-- Confidence gating (>85% before action)
-- Dynamic targets (random pod/IP/PID)
+**KubeSRE does NOT.**
 
-## 🛠️ Setup
-```bash
-pip install -r requirements.txt
-uvicorn app:app --port 7860
-python inference.py
-```
+It enforces:
+- ⛔ Strict step limits  
+- ⛔ Health degradation (-15% per mistake)  
+- ⛔ Noisy logs (signal buried in noise)  
+- ⛔ Dynamic targets (no memorization)
 
-## 📈 OpenEnv Tasks
-- **EASY**: Pod latency → `kubectl rollout restart`
-- **MEDIUM**: DB credentials → Rollback deployment  
-- **HARD**: DDoS → Block attacker IP
-- **EXTREME**: Memory leak → Kill PID
-- **INSANE**: Microservice cascade → Multi-step recovery
+➡️ Agents must **reason correctly — or fail**
+
+---
+
+# 🧠 Environment Design
+
+### 🔻 Temporal Degradation
+- Each incorrect action reduces system health
+- Failure at 0%
+- Forces **efficient decision-making**
+
+### 🎯 Dynamic Incidents
+- Randomized pods, IPs, PIDs
+- Prevents hardcoded solutions
+
+### 🔍 Noisy Logs
+- Realistic production noise
+- Critical signals hidden
+
+---
+
+# ⚙️ API
+
+### Reset
