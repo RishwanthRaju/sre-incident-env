@@ -1,23 +1,27 @@
 name: sre-incident-env
-version: "1.0.0"
-description: "A live SRE environment where agents diagnose and mitigate server incidents."
-endpoints:
-  reset: "/reset"
-  step: "/step"
-  state: "/state"
+version: "3.0.0"
+description: "Production-grade SRE Incident Response environment. Agents diagnose and resolve cascading Kubernetes failures under temporal pressure."
+entrypoint: server.app:app
+type: http
+spec_version: "1.0"
 tasks:
-  - name: easy
-    description: "Resolve a pod latency alert via restart"
+  - id: easy
+    name: "Pod Latency Spike"
+    description: "A pod is experiencing latency spikes due to thread pool exhaustion. Identify the pod and restart it."
     grader: "/grade/easy"
-  - name: medium
-    description: "Fix database credentials failure via rollback"
+  - id: medium
+    name: "Database Credential Failure"
+    description: "A bad deployment broke database credentials. Identify the failure and rollback the deployment."
     grader: "/grade/medium"
-  - name: hard
-    description: "Block a Layer 7 DDoS attacker IP"
+  - id: hard
+    name: "Layer 7 DDoS Attack"
+    description: "A DDoS attack is saturating the ingress. Find the attacker IP in logs and block it."
     grader: "/grade/hard"
-  - name: extreme
-    description: "Kill a memory leak process via PID"
+  - id: extreme
+    name: "Java Memory Leak"
+    description: "A Java process is leaking memory. Use run_top to find the PID and kill the process."
     grader: "/grade/extreme"
-  - name: insane
-    description: "Resolve cascading microservice failure"
+  - id: insane
+    name: "Cascading Microservice Failure"
+    description: "A cascading OOM failure: frontend-service → payment-gateway → redis-cache-cluster. Trace the full cascade and flush the cache."
     grader: "/grade/insane"
