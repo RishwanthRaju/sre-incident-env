@@ -1,11 +1,10 @@
 name: sre-incident-env
-version: "4.0.0"
+version: "5.0.0"
 description: >
-  KubeSRE — Production-grade SRE Incident Response environment.
-  Autonomous AI agents diagnose and resolve cascading Kubernetes
-  infrastructure failures under temporal pressure with dynamic
-  randomised targets, noise-buried log signals, and multi-step
-  reasoning requirements across 6 difficulty tiers.
+  KubeSRE v5.0 - Production-grade SRE Incident Response environment.
+  Autonomous AI agents diagnose and resolve cascading Kubernetes failures
+  under temporal pressure. 6 difficulty tiers, dynamic randomised targets,
+  shaped rewards, Prometheus metrics, multi-step reasoning enforcement.
 entrypoint: server.app:app
 type: http
 spec_version: "1.0"
@@ -15,61 +14,46 @@ tags:
   - kubernetes
   - incident-response
   - openenv
-  - rl-environment
+  - reinforcement-learning
 tasks:
   - id: easy
     name: "Pod Latency Spike"
-    description: >
-      A Kubernetes pod (auth-service) is experiencing latency spikes due to
-      thread pool exhaustion. Get logs to confirm the pod name, then restart it.
+    description: "Thread pool exhaustion on auth pod. Get logs to confirm pod name then restart it."
     max_steps: 12
     grader: "/grade/easy"
     commands: ["get_logs", "get_metrics", "restart_pod"]
 
   - id: medium
     name: "Database Credential Failure"
-    description: >
-      A bad deployment broke database credentials causing connection pool
-      exhaustion. Identify the bad version via logs, then rollback the deployment.
+    description: "Bad deployment broke DB credentials. Identify bad version via logs then rollback."
     max_steps: 12
     grader: "/grade/medium"
     commands: ["get_logs", "get_metrics", "rollback_deploy"]
 
   - id: hard
     name: "Layer 7 DDoS Attack"
-    description: >
-      A Layer 7 DDoS attack is saturating the ingress-nginx with 480k req/s.
-      Find the attacker IP address in ingress logs, then block it.
+    description: "DDoS attack saturating ingress with 480k req/s. Find attacker IP in logs then block it."
     max_steps: 12
     grader: "/grade/hard"
     commands: ["get_logs", "get_metrics", "block_ip"]
 
   - id: extreme
     name: "Java Memory Leak"
-    description: >
-      A Java process is leaking memory on a worker node causing OOM.
-      Use run_top to identify the exact PID, then kill the process.
+    description: "Java process leaking memory on worker node. Use run_top to find PID then kill it."
     max_steps: 12
     grader: "/grade/extreme"
     commands: ["get_logs", "run_top", "kill_process"]
 
   - id: insane
     name: "Cascading Microservice Failure"
-    description: >
-      A cascading OOM failure: frontend-service times out calling payment-gateway,
-      which is blocked by a full redis-cache-cluster. Trace the full 3-service
-      cascade via logs before flushing the cache.
+    description: "Cascading OOM: frontend timeouts payment-gateway which cannot reach redis-cache-cluster. Trace full 3-service cascade then flush cache."
     max_steps: 12
     grader: "/grade/insane"
     commands: ["get_logs", "flush_cache"]
 
   - id: apocalypse
     name: "Multi-Region Catastrophe"
-    description: >
-      A simultaneous multi-region outage combining DB split-brain, Layer 7 DDoS,
-      Java OOM, and cache failure across two AWS regions. Requires 5 coordinated
-      remediation steps: investigate haproxy, top db-primary, check replica logs,
-      block DDoS IP, and flush cache. Revenue impact $240k/min.
+    description: "Simultaneous multi-region outage: DB split-brain plus Layer 7 DDoS plus OOM plus cache failure. Requires 5 coordinated steps across 2 AWS regions. Revenue impact 240k per minute."
     max_steps: 12
     grader: "/grade/apocalypse"
     commands: ["get_logs", "run_top", "block_ip", "flush_cache", "kill_process"]
