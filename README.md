@@ -1,4 +1,4 @@
----
+﻿---
 title: KubeSRE Incident Env
 emoji: 🚨
 colorFrom: red
@@ -7,17 +7,12 @@ sdk: docker
 pinned: false
 ---
 
-# KubeSRE: Autonomous SRE Environment
+# KubeSRE Incident Env
 
-A high-fidelity OpenEnv-compatible SRE simulation for evaluating autonomous agents under realistic production failure conditions.
+SRE simulation environment for autonomous agents.
 
 ## API
 
-### Reset
-`POST /reset?task=easy` — tasks: easy, medium, hard, insane
+POST /reset?task=easy
 
-### Step
-`POST /step` — body: `{"command": "...", "target": "..."}`
-
-### Health
-`GET /health`
+POST /step
