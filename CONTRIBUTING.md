@@ -1,17 +1,35 @@
-# 🤝 Contributing to KubeSRE
+# Contributing to KubeSRE
 
-Thank you for your interest in contributing to the **KubeSRE Autonomous Agent Benchmark**! 
+Thank you for your interest in contributing to KubeSRE OpenEnv v4.0.
 
-As frontier models (like GPT-4, Claude 3, and Qwen) become more advanced, we need to continuously scale the difficulty of our simulated SRE environments. We welcome contributions from AI researchers, DevOps engineers, and the open-source community.
+## How to Add a New Task
 
-## 🚀 How to Add a New Difficulty Tier (Task)
+1. Add dynamic variables to ServerState in server/app.py
+2. Add task config to get_tasks() function
+3. Add get_logs anomaly handling for your service
+4. Add solution command handling in the step() route
+5. Add grade score to SCORES dict
+6. Add task to openenv.yaml
+7. Add task to inference.py task list
 
-If you want to add a "Level 6" or higher task to the environment, please follow the strict OpenEnv specifications.
+## Rules for New Tasks
 
-1. **Define the Alert:** The alert must be a red herring or require multi-hop debugging. Do not make the root cause obvious.
-2. **Update the State Matrix:** In `server/app.py`, locate the `ServerState` class. Add any new dynamic variables (e.g., randomized VPC networks, AWS IAM roles, or database port numbers) to ensure the new task remains Anti-Cheat.
-3. **Generate Log Noise:** Use the `generate_log_noise()` function to bury your anomaly trace inside at least 15-20 lines of standard HTTP or sys-daemon traffic.
-4. **Verify the RL Grader:** Ensure your new task can be mathematically solved. The `benchmark.py` suite must be able to calculate the `max_possible_reward` based on the optimal path length.
+- Alert must NOT reveal the exact fix command
+- Target must be randomised every reset (no memorisation)
+- Anomaly must be buried in 14+ noise log lines
+- Multi-step tasks must require 2+ investigation steps
+- Wrong fix must cost -15% health
 
-## 🐛 Bug Reports & Chaos Testing
-If you find a prompt injection or payload that crashes the FastAPI server, please add the payload to the `CHAOS_ACTIONS` array inside `chaos_test.py` and submit a Pull Request. We strive for a 0% server crash rate under all hallucinated LLM conditions.
+## Chaos Testing
+
+Add malicious payloads to chaos_test.py CHAOS_ACTIONS array.
+Server must handle all inputs gracefully (HTTP 200 or 422).
+Zero server crashes is the target.
+
+## Reward Design Rules
+
+- Investigation steps: 0.15-0.45 reward
+- Correct fix without investigation: 0.20-0.25
+- Correct fix with full investigation: 0.95
+- Duplicate action: 0.00 with -5% health penalty
+- Wrong fix: 0.05 with -15% health penalty
