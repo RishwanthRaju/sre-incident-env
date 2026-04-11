@@ -1,7 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, Field
-from typing import Dict
+from pydantic import BaseModel
 from datetime import datetime, UTC
 import random
 
@@ -32,9 +31,6 @@ class EpisodeState:
 
 STATE = EpisodeState()
 
-def now():
-    return datetime.now(UTC).isoformat()
-
 def obs():
     return {
         "system_health": STATE.system_health,
@@ -50,86 +46,64 @@ def degrade():
         STATE.terminal_output = "[FATAL] System crashed"
 
 def logs(signal):
-    noise = [
-        "GET /health 200",
-        "cache ok",
-        "worker alive",
-        "metrics scrape ok",
-        "cron success",
-        "db pool stable"
-    ]
+    noise = ["GET /health 200", "cache ok", "worker alive",
+             "metrics scrape ok", "cron success", "db pool stable"]
     l = random.sample(noise, 5)
     l.insert(random.randint(1, 4), signal)
     return "\n".join(l)
 
-# ---------------- TASKS ----------------
-
 def easy():
     pod = f"auth-{random.randint(1000,9999)}"
     STATE.root = {"cmd": "restart_pod", "target": pod}
-    STATE.dynamic = {"logs": False, "metrics": False}
+    STATE.dynamic = {}
     STATE.terminal_output = f"[ALERT] latency spike in {pod}"
 
 def medium():
     STATE.root = {"cmd": "rollback_deploy", "target": "database"}
-    STATE.dynamic = {"logs": False, "metrics": False}
+    STATE.dynamic = {}
     STATE.terminal_output = "[ALERT] db failures"
 
 def hard():
     STATE.root = {"cmd": "restart_service", "target": "backend"}
-    STATE.dynamic = {"logs": False, "frontend": False, "backend": False}
+    STATE.dynamic = {"frontend": False}
     STATE.terminal_output = "[ALERT] frontend 500 errors"
 
 def insane():
     STATE.root = {"cmd": "flush_cache", "target": "redis"}
-    STATE.dynamic = {
-        "frontend": False,
-        "payment": False,
-        "redis": False
-    }
+    STATE.dynamic = {"frontend": False, "payment": False, "redis": False}
     STATE.terminal_output = "[ALERT] checkout failing (500)"
 
-TASKS = {
-    "easy": easy,
-    "medium": medium,
-    "hard": hard,
-    "insane": insane
-}
+TASKS = {"easy": easy, "medium": medium, "hard": hard, "insane": insane}
 
-# ---------------- ROUTES ----------------
-
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 def home():
-    return "<h1>Elite OpenEnv Running</h1>"
+    return {"status": "KubeSRE OpenEnv running", "tasks": list(TASKS.keys())}
+
+@app.get("/health")
+def health():
+    return {"status": "healthy"}
 
 @app.post("/reset")
-def reset(task: str):
+def reset(task: str = "easy"):
     task = task.lower().strip()
     if task not in TASKS:
-        raise HTTPException(400, "invalid task")
-
+        raise HTTPException(400, f"Invalid task. Choose from: {list(TASKS.keys())}")
     STATE.reset()
     STATE.task = task
     TASKS[task]()
-
     return {"observation": obs(), "done": False}
 
 @app.post("/step")
 def step(a: AgentAction):
     if not STATE.task:
-        raise HTTPException(400, "reset first")
-
+        raise HTTPException(400, "Call /reset first")
     if STATE.done:
-        return {"observation": obs(), "reward": 0, "done": True}
+        return {"observation": obs(), "reward": 0.0, "done": True}
 
     STATE.step_count += 1
-
     correct_cmd = STATE.root["cmd"]
     correct_target = STATE.root["target"]
-
     reward = 0.1
-
-    # -------- LOGIC --------
 
     if a.command == "get_logs":
         if STATE.task == "insane":
@@ -142,38 +116,23 @@ def step(a: AgentAction):
             elif a.target == "redis":
                 STATE.dynamic["redis"] = True
                 STATE.terminal_output = logs("redis memory full")
-
         elif STATE.task == "hard":
             STATE.dynamic["frontend"] = True
             STATE.terminal_output = logs("frontend -> backend timeout")
-
         else:
             STATE.terminal_output = logs("error detected")
-
         reward = 0.25
 
     elif a.command == correct_cmd and a.target == correct_target:
-
-        # -------- REASONING CHECK --------
         if STATE.task == "insane":
-            if all(STATE.dynamic.values()):
-                reward = 1.0
-            else:
-                reward = 0.2  # punished guessing
-
+            reward = 1.0 if all(STATE.dynamic.values()) else 0.2
         elif STATE.task == "hard":
-            if STATE.dynamic.get("frontend"):
-                reward = 0.9
-            else:
-                reward = 0.3
-
+            reward = 0.9 if STATE.dynamic.get("frontend") else 0.3
         else:
             reward = 1.0
-
         STATE.done = True
         STATE.success = True
         STATE.terminal_output = "[SUCCESS] resolved"
-
     else:
         degrade()
 
@@ -181,8 +140,4 @@ def step(a: AgentAction):
         STATE.done = True
         STATE.terminal_output = "[FAILED] too many steps"
 
-    return {
-        "observation": obs(),
-        "reward": float(reward),
-        "done": STATE.done
-    }
+    return {"observation": obs(), "reward": float(reward), "done": STATE.done}
