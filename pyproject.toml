@@ -4,17 +4,16 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sre-incident-env"
-version = "1.0.0"
-description = "Live SRE Incident Response Environment"
+version = "4.0.0"
+description = "KubeSRE - Production-grade SRE Incident Response Environment"
 requires-python = ">=3.10"
 dependencies = [
     "fastapi",
     "uvicorn",
     "pydantic",
     "openai",
-    "httpx",
-    "openenv-core"
+    "httpx"
 ]
 
 [project.scripts]
-server = "app:main"
+server = "server.app:main"
