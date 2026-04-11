@@ -1,8 +1,6 @@
-@"
 fastapi
 uvicorn
 pydantic
 openai
 httpx
 openenv-core
-"@ | Out-File -FilePath requirements.txt -Encoding utf8
