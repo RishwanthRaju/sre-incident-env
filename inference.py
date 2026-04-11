@@ -1,6 +1,6 @@
 """
-KubeSRE Autonomous SRE Agent v4.0
-===================================
+KubeSRE Autonomous SRE Agent v5.0 - GRAND FINALE EDITION
+==========================================================
 ReAct + Planning Phase + Episodic Memory + Confidence Scoring + Self-Correction
 Author: Rishwanth Raju
 """
@@ -26,7 +26,6 @@ def log_end(task, score, steps): print(f"[END] task={task} score={score:.4f} ste
 
 # ── Episodic Memory ─────────────────────────────────────────────────────────
 class EpisodicMemory:
-    """Cross-task memory — remembers what worked in previous incidents."""
     def __init__(self):
         self.episodes = {}
 
@@ -48,55 +47,52 @@ class EpisodicMemory:
         for k, v in self.episodes.items():
             if k == current_task:
                 continue
-            icon = "✅" if v["success"] else "❌"
+            icon = "RESOLVED" if v["success"] else "FAILED"
             lines.append(
-                f"  [{icon}] '{k}': alert='{v['alert']}' "
-                f"→ solution='{v['cmd']}({v['target']})' "
+                f"  [{icon}] Task '{k}': alert='{v['alert']}' "
+                f"-> solution='{v['cmd']}({v['target']})' "
                 f"steps={v['steps']} score={v['score']}"
             )
         if not lines:
             return ""
         return "EPISODIC MEMORY (learn from previous incidents):\n" + "\n".join(lines)
 
-# ── Prompts ─────────────────────────────────────────────────────────────────
-SYSTEM_PROMPT = """You are an elite Site Reliability Engineer (SRE) AI Agent with a perfect incident record.
-Resolve the production incident before system health hits 0%. Wrong fixes cost -15% health. Max 12 steps.
+# ── System Prompt ───────────────────────────────────────────────────────────
+SYSTEM_PROMPT = """You are an elite Site Reliability Engineer (SRE) AI Agent.
+Resolve the production incident before system health hits 0%.
+Wrong fixes cost -15% health. Duplicate actions cost -5%. Max 12 steps.
 
-AVAILABLE COMMANDS (exact spelling required):
-- get_logs        → target: exact service name shown in the alert or terminal
-- get_metrics     → target: exact service name
-- run_top         → target: exact node name from alert (e.g. "worker-node-7")
-- restart_pod     → target: exact pod name from the alert (e.g. "auth-service-4521")
-- rollback_deploy → target: ALWAYS "database" — never add version numbers
-- block_ip        → target: exact attacker IP found in ingress-nginx logs
-- kill_process    → target: exact PID number found in run_top output
-- flush_cache     → target: ALWAYS "redis-cache-cluster"
+AVAILABLE COMMANDS:
+- get_logs        target: exact service name from alert or terminal
+- get_metrics     target: exact service name
+- run_top         target: exact node name from alert
+- restart_pod     target: exact pod name from alert (e.g. auth-service-4521)
+- rollback_deploy target: ALWAYS just "database" never add version numbers
+- block_ip        target: exact IP address found in ingress-nginx logs
+- kill_process    target: exact PID number found in run_top output
+- flush_cache     target: ALWAYS "redis-cache-cluster"
 
 INCIDENT PLAYBOOK:
-1. HighLatency / Thread pool alert      → get_logs <pod_name> → restart_pod <pod_name>
-2. DatabaseConnectionFailing alert      → get_logs database   → rollback_deploy database
-3. TrafficSpike / DDoS alert            → get_logs ingress-nginx → find IP → block_ip <IP>
-4. OutOfMemory / RAM alert              → run_top <node_name> → find java PID → kill_process <PID>
-5. Checkout 500 / Cascading alert       → get_logs frontend-service → get_logs payment-gateway → get_logs redis-cache-cluster → flush_cache redis-cache-cluster
-6. Multi-region / Apocalypse alert      → get_logs haproxy → run_top <db_node> → get_logs db-replica → block_ip <attacker_ip> → flush_cache redis-cache-cluster
+1. HighLatency/Thread pool  -> get_logs <pod> -> restart_pod <pod>
+2. DatabaseConnection fail  -> get_logs database -> rollback_deploy database
+3. TrafficSpike/DDoS        -> get_logs ingress-nginx -> find IP -> block_ip <IP>
+4. OutOfMemory/RAM          -> run_top <node> -> find java PID -> kill_process <PID>
+5. Checkout 500/Cascade     -> get_logs frontend-service -> get_logs payment-gateway -> get_logs redis-cache-cluster -> flush_cache redis-cache-cluster
+6. Multi-region/Apocalypse  -> get_logs haproxy -> run_top <db-node> -> get_logs db-replica -> block_ip <attacker-IP> -> flush_cache redis-cache-cluster
 
-RULES:
-- NEVER repeat the same command+target (you get penalised).
-- ALWAYS extract exact pod names, IPs, PIDs from terminal — never guess.
-- confidence < 0.75 means investigate more before fixing.
-- confidence ≥ 0.75 means apply the fix.
+CRITICAL RULES:
+1. NEVER repeat same command+target. You get penalised.
+2. Extract exact pod names, IPs, PIDs from terminal. Never guess.
+3. confidence below 0.75 means investigate more first.
+4. confidence 0.75 or above means apply the fix.
+5. rollback_deploy target is ALWAYS "database" only.
+6. flush_cache target is ALWAYS "redis-cache-cluster" only.
 
-RESPONSE FORMAT — strict JSON only, no markdown, no extra text:
-{"plan": "1-sentence plan for this step", "confidence": 0.95, "thought": "detailed reasoning", "command": "exact_command", "target": "exact_target"}"""
+OUTPUT FORMAT - strict JSON only, no markdown:
+{"plan": "one sentence plan", "confidence": 0.95, "thought": "detailed reasoning", "command": "exact_command", "target": "exact_target"}"""
 
 # ── Agent ───────────────────────────────────────────────────────────────────
-async def run_task(
-    client: OpenAI,
-    http: httpx.AsyncClient,
-    task_name: str,
-    memory: EpisodicMemory
-) -> float:
-
+async def run_task(client, http, task_name, memory):
     log_start(task_name)
     rewards     = []
     history     = []
@@ -106,39 +102,33 @@ async def run_task(
     last_alert  = "Unknown"
     error_hint  = ""
 
-    # Reset environment
     try:
         res        = await http.post(f"{ENV_URL}/reset?task={task_name}", timeout=15.0)
         data       = res.json()
         obs        = data["observation"]
         last_alert = obs.get("active_alerts", "Unknown")
     except Exception as e:
-        print(f"[ERROR] Reset failed for task={task_name}: {e}", flush=True)
+        print(f"[ERROR] Reset failed task={task_name}: {e}", flush=True)
         log_end(task_name, 0.0, 0)
         return 0.0
 
-    # Agent loop
     for step in range(1, 13):
         history_text  = "\n".join(history[-5:]) if history else "None"
         terminal_text = obs.get("terminal_output", "")[-2000:]
         memory_text   = memory.recall(task_name)
 
         user_prompt = (
-            f"ACTIVE ALERT  : {obs.get('active_alerts', 'None')}\n"
-            f"SYSTEM HEALTH : {obs.get('system_health', 100):.1f}%\n"
+            f"ACTIVE ALERT  : {obs.get('active_alerts','None')}\n"
+            f"SYSTEM HEALTH : {obs.get('system_health',100):.1f}%\n"
             f"STEP          : {step}/12\n"
-            f"TERMINAL OUTPUT:\n{terminal_text}\n\n"
-            f"ACTION HISTORY:\n{history_text}\n"
+            f"TERMINAL:\n{terminal_text}\n\n"
+            f"HISTORY:\n{history_text}\n"
             + (f"\n{memory_text}\n" if memory_text else "")
-            + (f"\n⚠️  HINT: {error_hint}\n" if error_hint else "")
-            + "\nWrite your JSON action now:"
+            + (f"\nHINT: {error_hint}\n" if error_hint else "")
+            + "\nYour JSON:"
         )
 
-        # LLM call with 3-attempt retry + self-correction
         server_action = {"command": "get_logs", "target": "frontend-service"}
-        confidence    = 0.5
-        plan_text     = ""
-
         for attempt in range(3):
             try:
                 completion = client.chat.completions.create(
@@ -151,9 +141,9 @@ async def run_task(
                     max_tokens=250
                 )
                 raw = completion.choices[0].message.content.strip()
-                # Extract JSON even if wrapped in markdown
                 if "```" in raw:
-                    raw = raw.split("```")[1]
+                    parts = raw.split("```")
+                    raw = parts[1] if len(parts) > 1 else raw
                     if raw.startswith("json"):
                         raw = raw[4:]
                 if "{" in raw and "}" in raw:
@@ -162,16 +152,10 @@ async def run_task(
                 parsed     = json.loads(raw)
                 confidence = float(parsed.get("confidence", 1.0))
                 thought    = parsed.get("thought", "")
-                plan_text  = parsed.get("plan", "")
+                plan       = parsed.get("plan", "")
 
-                print(
-                    f"[PLAN]    step={step} task={task_name}: {plan_text[:100]}",
-                    flush=True
-                )
-                print(
-                    f"[THOUGHT] step={step} conf={confidence:.0%}: {thought[:120]}",
-                    flush=True
-                )
+                print(f"[PLAN]    step={step} task={task_name}: {plan[:100]}", flush=True)
+                print(f"[THOUGHT] step={step} conf={confidence:.0%}: {thought[:120]}", flush=True)
 
                 server_action = {
                     "command": parsed.get("command", "get_logs"),
@@ -183,20 +167,18 @@ async def run_task(
             except Exception as ex:
                 if attempt == 2:
                     print(f"[WARN] LLM parse failed step={step}: {ex}", flush=True)
-                    error_hint = "PREVIOUS OUTPUT WAS INVALID JSON. Return ONLY valid JSON with no markdown."
+                    error_hint = "PREVIOUS JSON INVALID. Output ONLY valid JSON no markdown."
                 else:
                     await asyncio.sleep(2)
 
-        # Step the environment
         try:
             step_res  = await http.post(f"{ENV_URL}/step", json=server_action, timeout=15.0)
             step_data = step_res.json()
             obs       = step_data["observation"]
             reward    = float(step_data["reward"])
             done      = step_data["done"]
-
             if "[ERROR]" in obs.get("terminal_output", ""):
-                error_hint = "Previous command caused an error. Verify exact spelling of target from the terminal output."
+                error_hint = "Previous command caused error. Verify exact target spelling."
         except Exception as e:
             print(f"[ERROR] Step failed: {e}", flush=True)
             reward = 0.05
@@ -206,21 +188,18 @@ async def run_task(
         log_step(step, reward)
         last_action = server_action
 
-        # Build history entry
         last_line = obs.get("terminal_output", "").split("\n")[-1]
         history.append(
-            f"Step {step}: plan='{plan_text[:50]}' "
+            f"Step {step}: plan='{plan[:50]}' "
             f"action={server_action['command']}({server_action['target']}) "
             f"reward={reward:.2f} | {last_line[:70]}"
         )
 
         if done:
-            health = obs.get("system_health", 0)
-            if health > 0 and reward >= 0.90:
+            if obs.get("system_health", 0) > 0 and reward >= 0.90:
                 success = True
             break
 
-    # Score calculation
     max_possible = (0.20 * (step - 1)) + 0.95
     total        = sum(rewards)
     score        = max(0.05, min(0.95, total / max_possible)) if max_possible > 0 else 0.05
@@ -229,15 +208,10 @@ async def run_task(
 
     log_end(task_name, score, step)
 
-    # Store in episodic memory
     memory.store(
-        task=task_name,
-        alert=last_alert,
-        cmd=last_action["command"],
-        target=last_action["target"],
-        success=success,
-        steps=step,
-        score=score
+        task=task_name, alert=last_alert,
+        cmd=last_action["command"], target=last_action["target"],
+        success=success, steps=step, score=score
     )
 
     return score
@@ -245,7 +219,7 @@ async def run_task(
 # ── Main ─────────────────────────────────────────────────────────────────────
 async def main():
     if not API_KEY:
-        print("[ERROR] HF_TOKEN not set. Add it in HuggingFace Space → Settings → Secrets.", flush=True)
+        print("[ERROR] HF_TOKEN not set. Add in HuggingFace Space Settings -> Secrets.", flush=True)
         return
 
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
@@ -253,10 +227,10 @@ async def main():
     tasks  = ["easy", "medium", "hard", "extreme", "insane", "apocalypse"]
     scores = []
 
-    print("[KubeSRE v4.0] Agent starting.", flush=True)
+    print("[KubeSRE v5.0] Agent starting.", flush=True)
     print(f"[KubeSRE] Model: {MODEL_NAME}", flush=True)
     print(f"[KubeSRE] Tasks: {', '.join(tasks)}", flush=True)
-    print("[KubeSRE] Features: ReAct + Planning + Episodic Memory + Confidence Scoring", flush=True)
+    print("[KubeSRE] Features: Planning + ReAct + Episodic Memory + Confidence + Self-Correction", flush=True)
 
     async with httpx.AsyncClient() as http:
         for task in tasks:
@@ -264,9 +238,8 @@ async def main():
             scores.append((task, score))
             await asyncio.sleep(1)
 
-    # Final scorecard
     print("\n" + "="*65, flush=True)
-    print("  KUBESRE AGENT FINAL SCORECARD", flush=True)
+    print("  KUBESRE AGENT FINAL SCORECARD v5.0", flush=True)
     print("="*65, flush=True)
     print(f"  {'TASK':<14} {'STATUS':<12} {'SCORE':<10} {'GRADE'}", flush=True)
     print("-"*65, flush=True)
@@ -276,8 +249,8 @@ async def main():
     for task, score in scores:
         status = "RESOLVED" if score >= 0.50 else "FAILED"
         grade  = "S" if score >= 0.90 else "A" if score >= 0.75 else "B" if score >= 0.55 else "C"
-        icon   = "✅" if score >= 0.50 else "❌"
-        print(f"  {icon} {task.upper():<12} {status:<12} {score:<10.4f} [{grade}]", flush=True)
+        icon   = "+" if score >= 0.50 else "-"
+        print(f"  [{icon}] {task.upper():<12} {status:<12} {score:<10.4f} [{grade}]", flush=True)
         total += score
         if score >= 0.50:
             wins += 1
@@ -287,8 +260,8 @@ async def main():
 
     print("="*65, flush=True)
     print(f"  AVERAGE SCORE : {avg:.4f}", flush=True)
-    print(f"  WIN RATE      : {win_rate:.1f}%  ({wins}/{len(scores)} tasks resolved)", flush=True)
-    print(f"  OVERALL GRADE : {'S+' if avg >= 0.90 else 'A' if avg >= 0.75 else 'B'}", flush=True)
+    print(f"  WIN RATE      : {win_rate:.1f}% ({wins}/{len(scores)} resolved)", flush=True)
+    print(f"  OVERALL GRADE : {'S+' if avg>=0.90 else 'A' if avg>=0.75 else 'B'}", flush=True)
     print("="*65, flush=True)
 
 if __name__ == "__main__":
