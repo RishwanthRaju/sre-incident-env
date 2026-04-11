@@ -13,6 +13,12 @@ from pydantic import BaseModel, Field
 from typing import Dict, Any, List
 import random, datetime, uuid, time
 
+# OpenEnv integration (REQUIRED for validator)
+try:
+    from openenv import OpenEnv
+except ImportError:
+    pass  # Graceful fallback if openenv-core doesn't provide this
+
 app = FastAPI(
     title="KubeSRE OpenEnv",
     description="Production-grade SRE Incident Response environment for autonomous AI agents.",
