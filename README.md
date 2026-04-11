@@ -2,7 +2,7 @@
 title: KubeSRE Incident Env
 emoji: robot
 colorFrom: red
-colorTo: orange
+colorTo: yellow
 sdk: docker
 pinned: false
 ---
