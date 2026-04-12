@@ -4,15 +4,16 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sre-incident-env"
-version = "4.0.0"
-description = "KubeSRE - Production-grade SRE Incident Response Environment"
+version = "5.0.0"
+description = "KubeSRE — Production-grade SRE Incident Response environment for evaluating agentic reasoning under cascading Kubernetes failures."
 requires-python = ">=3.10"
 dependencies = [
     "fastapi",
     "uvicorn",
     "pydantic",
     "openai",
-    "httpx"
+    "httpx",
+    "openenv-core>=0.2.0"
 ]
 
 [project.scripts]
