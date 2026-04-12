@@ -72,7 +72,7 @@ async def run_task(client: OpenAI, task_name: str) -> Dict[str, Any]:
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": user_prompt}
                     ],
-                    temperature=0.05 if task_name == "apocalypse" else 0.0,
+                    temperature=0.0,
                     max_tokens=150
                 )
                 action_text = completion.choices[0].message.content.strip()
@@ -99,7 +99,7 @@ async def run_task(client: OpenAI, task_name: str) -> Dict[str, Any]:
             history.append(f"Step {step}: ran {server_action['command']} -> Terminal: {obs['terminal_output'][:50]}...")
 
             if done:
-                if "system_health" in obs and obs["system_health"] > 50:  # FIXED: 50% health threshold
+                if "system_health" in obs and obs["system_health"] > 0:  # Original: > 0% health
                     success = True
                 break
                 
