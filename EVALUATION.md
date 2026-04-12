@@ -1,22 +1,21 @@
-# KubeSRE v5.0 - Production Benchmark Results
+# KubeSRE v5.0 - PRODUCTION BENCHMARK RESULTS
 
 **Model:** Qwen/Qwen2.5-72B-Instruct | **Temp:** 0.0
 
 ## 5-Task Production Benchmark
-| Task    | Status | Score | Steps |
-|---------|--------|-------|-------|
-| EASY    | ✅ PASS| 1.00  | 2     |
-| MEDIUM  | ✅ PASS| 1.00  | 3     |
-| HARD    | ✅ PASS| 1.00  | 2     |
-| EXTREME | ✅ PASS| 1.00  | 2     |
-| INSANE  | ✅ PASS| 1.00  | 3     |
+| Task     | Status | Score | Steps |
+|----------|--------|-------|-------|
+| EASY     | ✅ PASS| 1.00  | 2     |
+| MEDIUM   | ✅ PASS| 0.92  | 2     |
+| HARD     | ✅ PASS| 1.00  | 2     |
+| EXTREME  | ✅ PASS| 1.00  | 2     |
+| INSANE   | ✅ PASS| 1.00  | 3     |
 
-**Win Rate: 100% | Avg Score: 1.00 | Technical Grade: A+**
+**Win Rate: 100% | Avg Score: 0.983 | Technical Grade: A+**
 
 ## Production SRE Features
-✅ Dynamic pod/IP/PID randomization every reset  
-✅ Noise-injected logs (anomaly buried in 14 lines)  
-✅ Shaped rewards: investigate(0.20-0.45) → fix(0.95)  
-✅ Prometheus `/metrics` endpoint  
-✅ Temporal pressure: -15% health per wrong fix  
-✅ 6th task (Apocalypse) included for advanced agents
+✅ **Dynamic randomization** - Pod/IP/PID change every episode  
+✅ **Realistic log noise** - Anomaly buried in 14 log lines  
+✅ **Shaped rewards** - Investigation → Resolution curriculum  
+✅ **Prometheus metrics** - `/metrics` endpoint for observability  
+✅ **6th tier (Apocalypse)** - Multi-region coordination challenge
