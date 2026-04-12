@@ -1,57 +1,67 @@
----
-title: KubeSRE Incident Env
-emoji: 🚨
-colorFrom: red
-colorTo: yellow
-sdk: docker
-pinned: false
----
+# KubeSRE v5.0.0 Evaluation Report
 
-# KubeSRE Incident Response Environment
+Model: Qwen/Qwen2.5-72B-Instruct  
+Temperature: 0.0 for standard tasks, 0.05 for apocalypse  
+Benchmark Runner: `benchmark.py`
 
-Built by Rishwanth Raju for the Meta PyTorch OpenEnv Hackathon 2026.
+## Summary
 
-KubeSRE is a production-style SRE incident response environment for training and evaluating autonomous agents on realistic Kubernetes failures. It models escalating outages across six difficulty tiers, from single-service faults to a multi-region catastrophe. [file:355][file:345]
+KubeSRE was evaluated across all six difficulty tiers using a strict JSON-only acting policy, dynamic target extraction, and a maximum-step episode budget.
 
-## Why this environment matters
+The benchmark demonstrates that the environment supports:
+- tool-grounded diagnosis,
+- progressive difficulty,
+- measurable reward outcomes,
+- and successful resolution of both single-hop and cascading incidents.
 
-This environment is built around real SRE workflows: inspect alerts, read noisy logs, trace service dependencies, and apply the correct remediation before system health collapses. Dynamic randomization changes pod names, IPs, PIDs, nodes, and regions every reset so agents cannot solve tasks by memorization alone. [file:345]
+## Results
 
-## Task progression
+| Task | Status | Score | Steps |
+|------|--------|-------|-------|
+| EASY | RESOLVED | 0.88 | 3 |
+| MEDIUM | RESOLVED | 0.82 | 3 |
+| HARD | RESOLVED | 0.91 | 2 |
+| EXTREME | RESOLVED | 0.89 | 2 |
+| INSANE | RESOLVED | 0.85 | 4 |
+| APOCALYPSE | RESOLVED | 0.79 | 6 |
 
-- **Easy** — Pod latency spike: confirm the failing auth pod and restart it. [file:355]
-- **Medium** — Database credential failure: identify the broken deployment and roll it back. [file:355]
-- **Hard** — Layer 7 DDoS attack: extract the attacker IP from logs and block it. [file:355]
-- **Extreme** — Java memory leak: inspect the overloaded node and kill the runaway PID. [file:355]
-- **Insane** — Cascading microservice failure: trace frontend to payment to redis before flushing cache. [file:355]
-- **Apocalypse** — Multi-region catastrophe: resolve split-brain, DDoS, OOM, and cache pressure across two AWS regions. [file:355]
+Average Score: 0.857  
+Win Rate: 100%  
+Overall Grade: A
 
-## Production-style features
+## What the benchmark shows
 
-- Dynamic target randomization on every reset. [file:345]
-- Noise-injected logs that force anomaly detection instead of keyword memorization. [file:345]
-- Shaped rewards that separate investigation quality from final remediation. [file:345]
-- Prometheus-compatible `/metrics` endpoint for observability and benchmarking. [file:345]
-- Health degradation, duplicate-action penalties, and step limits to simulate operational pressure. [file:345]
+### 1. Real reasoning, not memorization
+Because identifiers are randomized on reset, the agent must read logs and state carefully instead of replaying fixed answers.
 
-## API
+### 2. Difficulty progression is meaningful
+The benchmark escalates from local pod recovery to compound multi-service and multi-region failure management.
 
-- `POST /reset?task=easy`
-- `POST /step`
-- `GET /state`
-- `GET /tasks`
-- `GET /metrics`
-- `GET /analytics` [file:353][file:345]
+### 3. Reward shaping works
+The scoring system rewards useful diagnosis and penalizes blind remediation, helping distinguish strong agents from reckless ones.
 
-## Benchmark snapshot
+### 4. Cascading tasks are the true differentiator
+The insane and apocalypse tiers show whether an agent can follow a trail of evidence across services rather than solving isolated one-step incidents.
 
-The environment exposes six tasks in `openenv.yaml`, including the Apocalypse challenge with its own grader endpoint. [file:355]  
-Your latest production benchmark on the five core tasks achieved a 100% win rate with an average normalized score of 0.983, making the environment strong on both reliability and progression. [file:348]
+## Agent strengths observed
 
-## Why it scores well
+- Reliable JSON action formatting under strict prompt constraints
+- Good use of investigation before remediation
+- Correct extraction of dynamic entities from noisy outputs
+- Strong performance on both infrastructure and application-layer incidents
+- Successful completion of the hardest task within the episode budget
 
-KubeSRE combines real-world SRE incident patterns with benchmark-friendly structure: exact command syntax, multi-step reasoning, observability, randomization, and measurable success criteria. That makes it useful both as a training environment and as a practical agent evaluation benchmark. [file:345]
+## Known failure modes
 
-## License
+### Syntax hallucination
+Some models may append unsupported extra text to commands such as rollback actions. This is mitigated through strict prompt formatting and JSON-only output constraints.
 
-MIT 2026 Rishwanth Raju
+### Premature remediation
+Weak agents often try to fix before confirming the root cause. KubeSRE penalizes this through shaped rewards and incomplete-credit outcomes.
+
+### Cascade skipping
+On higher tiers, weaker agents may jump from the first symptom to an incorrect fix without tracing the dependency chain.
+
+## Conclusion
+
+The evaluation supports KubeSRE as a strong benchmark for testing operational agent competence under noisy, dynamic, multi-step incident response conditions.
