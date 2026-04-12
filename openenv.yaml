@@ -5,34 +5,40 @@ entrypoint: server.app:app
 type: http
 spec_version: "1.0"
 author: "Rishwanth Raju"
+
 tasks:
   - id: easy
     name: "Pod Latency Spike"
-    description: "Auth pod thread pool exhausted. Get logs to confirm pod name then restart it."
+    description: "Auth pod thread pool exhausted. Inspect logs, identify the failing pod, then restart the exact pod."
     max_steps: 12
     grader: "/grade/easy"
+
   - id: medium
     name: "Database Credential Failure"
-    description: "Bad deployment broke DB credentials. Identify via logs then rollback."
+    description: "A bad deployment broke database credentials. Investigate logs, identify the affected service, then roll back the database deployment."
     max_steps: 12
     grader: "/grade/medium"
+
   - id: hard
     name: "Layer 7 DDoS Attack"
-    description: "DDoS flooding ingress. Find attacker IP in logs then block it."
+    description: "Ingress is being flooded by Layer 7 traffic. Read logs, find the attacker IP, then block the exact IP address."
     max_steps: 12
     grader: "/grade/hard"
+
   - id: extreme
     name: "Java Memory Leak"
-    description: "Java process leaking memory. Use run_top to find PID then kill it."
+    description: "A Java process is exhausting memory on a worker node. Use run_top to locate the runaway PID, then kill the exact process."
     max_steps: 12
     grader: "/grade/extreme"
+
   - id: insane
     name: "Cascading Microservice Failure"
-    description: "OOM cascade: frontend to payment to redis. Trace full chain then flush cache."
+    description: "A cascading OOM failure spans frontend, payment, and redis. Trace the dependency chain through logs, then flush the redis cache cluster."
     max_steps: 12
     grader: "/grade/insane"
+
   - id: apocalypse
     name: "Multi-Region Catastrophe"
-    description: "DB split-brain plus DDoS plus OOM plus cache failure across 2 AWS regions. 5 coordinated steps required."
+    description: "A multi-region outage combines DB split-brain, DDoS, OOM, and cache failure across two AWS regions. Coordinate the full recovery sequence and finish by restoring the redis cache layer."
     max_steps: 12
     grader: "/grade/apocalypse"
