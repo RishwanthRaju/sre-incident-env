@@ -378,7 +378,7 @@ def step(action: Action):
                 state.insane_traced["redis"] = True
                 anomaly = (f"{ts()} [OOM] redis-cache-cluster: maxmemory 16384MB/16384MB reached. "
                            f"noeviction policy active. Fix: flush_cache redis-cache-cluster")
-                reward  = 0.35
+                reward  = 0.45
 
         elif state.task_level == "apocalypse":
             if "haproxy" in t:
@@ -386,7 +386,7 @@ def step(action: Action):
                 anomaly = (f"{ts()} [FATAL] haproxy: Split-brain between {state.region_a} and {state.region_b}. "
                            f"Primary {state.apoc_node} unreachable. DDoS from {state.apoc_ip}. "
                            f"Next: run_top {state.apoc_node}")
-                reward  = 0.30
+                reward  = 0.98
             elif "replica" in t or "db-replica" in t:
                 state.apoc_progress["replica"] = True
                 anomaly = (f"{ts()} [ERROR] db-replica: Replication lag 847s. "
