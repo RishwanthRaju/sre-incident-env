@@ -1,45 +1,57 @@
-# KubeSRE v5.0 - Production Benchmark Results
+---
+title: KubeSRE Incident Env
+emoji: 🚨
+colorFrom: red
+colorTo: yellow
+sdk: docker
+pinned: false
+---
 
-**Model:** Qwen/Qwen2.5-72B-Instruct  
-**Temperature:** 0.0  
-**Environment:** KubeSRE OpenEnv v5.0
+# KubeSRE Incident Response Environment
 
-## Benchmark Summary
+Built by Rishwanth Raju for the Meta PyTorch OpenEnv Hackathon 2026.
 
-This benchmark evaluates the five core production tasks in KubeSRE: Easy, Medium, Hard, Extreme, and Insane. These tasks cover pod recovery, database rollback, DDoS mitigation, memory leak remediation, and cascading microservice failure tracing.
+KubeSRE is a production-style SRE incident response environment for training and evaluating autonomous agents on realistic Kubernetes failures. It models escalating outages across six difficulty tiers, from single-service faults to a multi-region catastrophe. [file:355][file:345]
 
-| Task    | Status  | Score | Steps |
-|---------|---------|-------|-------|
-| EASY    | ✅ PASS | 1.00  | 2     |
-| MEDIUM  | ✅ PASS | 0.92  | 2     |
-| HARD    | ✅ PASS | 1.00  | 2     |
-| EXTREME | ✅ PASS | 1.00  | 2     |
-| INSANE  | ✅ PASS | 1.00  | 3     |
+## Why this environment matters
 
-**Win Rate:** 100%  
-**Average Normalized Score:** 0.983  
-**Technical Grade:** A+
+This environment is built around real SRE workflows: inspect alerts, read noisy logs, trace service dependencies, and apply the correct remediation before system health collapses. Dynamic randomization changes pod names, IPs, PIDs, nodes, and regions every reset so agents cannot solve tasks by memorization alone. [file:345]
 
-## What this benchmark demonstrates
+## Task progression
 
-- The agent successfully resolves all five production benchmark tasks.
-- The environment supports short-horizon and multi-step reasoning workflows.
-- The benchmark includes both single-root-cause incidents and dependency-chain failures.
-- The measured score reflects stable task completion with low step counts.
+- **Easy** — Pod latency spike: confirm the failing auth pod and restart it. [file:355]
+- **Medium** — Database credential failure: identify the broken deployment and roll it back. [file:355]
+- **Hard** — Layer 7 DDoS attack: extract the attacker IP from logs and block it. [file:355]
+- **Extreme** — Java memory leak: inspect the overloaded node and kill the runaway PID. [file:355]
+- **Insane** — Cascading microservice failure: trace frontend to payment to redis before flushing cache. [file:355]
+- **Apocalypse** — Multi-region catastrophe: resolve split-brain, DDoS, OOM, and cache pressure across two AWS regions. [file:355]
 
-## Production SRE features
+## Production-style features
 
-- **Dynamic randomization** — Pod names, attacker IPs, worker nodes, process IDs, database nodes, and regions change across resets.
-- **Realistic log noise** — Relevant anomalies are buried inside normal operational log traffic.
-- **Shaped rewards** — Investigation actions and remediation actions are scored differently to reward proper diagnosis.
-- **Prometheus observability** — The environment exposes a `/metrics` endpoint for runtime monitoring.
-- **Temporal pressure** — Wrong actions reduce health, and duplicate actions are penalized.
-- **Advanced challenge tier** — A sixth Apocalypse task extends the environment to multi-region coordinated recovery.
+- Dynamic target randomization on every reset. [file:345]
+- Noise-injected logs that force anomaly detection instead of keyword memorization. [file:345]
+- Shaped rewards that separate investigation quality from final remediation. [file:345]
+- Prometheus-compatible `/metrics` endpoint for observability and benchmarking. [file:345]
+- Health degradation, duplicate-action penalties, and step limits to simulate operational pressure. [file:345]
 
-## Notes
+## API
 
-The production benchmark focuses on the five most stable benchmark tasks for repeatable evaluation. The full environment still includes six total tasks in `openenv.yaml`, with Apocalypse retained as an advanced challenge scenario for higher-complexity agent testing.
+- `POST /reset?task=easy`
+- `POST /step`
+- `GET /state`
+- `GET /tasks`
+- `GET /metrics`
+- `GET /analytics` [file:353][file:345]
 
-## Conclusion
+## Benchmark snapshot
 
-KubeSRE v5.0 provides a realistic and benchmarkable SRE incident environment with measurable task success, randomized targets, noisy observability data, and escalating operational complexity.
+The environment exposes six tasks in `openenv.yaml`, including the Apocalypse challenge with its own grader endpoint. [file:355]  
+Your latest production benchmark on the five core tasks achieved a 100% win rate with an average normalized score of 0.983, making the environment strong on both reliability and progression. [file:348]
+
+## Why it scores well
+
+KubeSRE combines real-world SRE incident patterns with benchmark-friendly structure: exact command syntax, multi-step reasoning, observability, randomization, and measurable success criteria. That makes it useful both as a training environment and as a practical agent evaluation benchmark. [file:345]
+
+## License
+
+MIT 2026 Rishwanth Raju
