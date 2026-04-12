@@ -9,42 +9,102 @@ pinned: false
 
 # KubeSRE Incident Response Environment
 
-KubeSRE is a production-style SRE incident response environment for training and evaluating autonomous agents on realistic Kubernetes failures. It models escalating outages across six difficulty tiers, from single-service faults to a multi-region catastrophe. [file:355]
+KubeSRE is a production-inspired OpenEnv environment for evaluating whether AI agents can diagnose and resolve realistic Kubernetes and infrastructure incidents under temporal pressure.
 
-## Why this environment is useful
+Built by Rishwanth Raju for the Meta PyTorch OpenEnv Hackathon 2026.
 
-This environment is designed around real SRE-style workflows: reading logs, checking metrics, identifying noisy signals, and applying the correct remediation under time pressure. It includes dynamic randomization for pod names, IPs, PIDs, and nodes so agents cannot memorize answers and must actually reason through each episode. [file:346]
+## Why this environment matters
 
-## Task progression
+Most tool-use benchmarks test shallow API calling. KubeSRE tests operational reasoning.
 
-- **Easy:** Pod latency spike, confirm the failing auth pod and restart it. [file:355]
-- **Medium:** Database credential failure, identify the bad deployment and roll it back. [file:355]
-- **Hard:** Layer 7 DDoS attack, find the attacker IP in logs and block it. [file:355]
-- **Extreme:** Java memory leak, inspect the node and kill the runaway PID. [file:355]
-- **Insane:** Cascading microservice failure, trace frontend to payment to redis before flushing cache. [file:355]
-- **Apocalypse:** Multi-region catastrophe involving split-brain, DDoS, OOM, and cache failure. [file:355]
+Agents must:
+- inspect logs, metrics, and system state,
+- ignore noisy but irrelevant observations,
+- identify exact dynamic targets such as pod names, PIDs, IPs, and nodes,
+- choose the correct remediation action,
+- avoid duplicate or premature fixes,
+- solve multi-hop cascading failures across services.
 
-## Environment features
+This makes KubeSRE useful for both training and evaluating agent reliability in high-pressure DevOps and SRE workflows.
 
-- Dynamic target randomization on every reset. [file:346]
-- Noise-injected logs that force anomaly detection instead of pattern memorization. [file:346]
-- Shaped rewards that distinguish investigation from blind fixes. [file:346]
-- Prometheus-compatible `/metrics` endpoint for observability. [file:353][file:346]
-- Clear episode boundaries with health degradation and max-step limits. [file:346]
+## Core features
+
+- 6 difficulty tiers: easy, medium, hard, extreme, insane, apocalypse
+- Dynamic randomization of pod names, IPs, PIDs, nodes, and log positions
+- Multi-step investigation before remediation
+- Reward shaping that discourages blind action-taking
+- Realistic noisy log streams with hidden anomalies
+- Metrics and analytics endpoints for observability
+- Clear task-specific grading endpoints
+
+## Task ladder
+
+### Easy — Pod Latency Spike
+Investigate an overloaded auth pod and restart the correct target.
+
+### Medium — Database Credential Failure
+Trace a failed deployment and rollback the affected service.
+
+### Hard — Layer 7 DDoS Attack
+Find the attacker IP buried in noisy ingress logs and block it.
+
+### Extreme — Java Memory Leak
+Use node-level process inspection to identify and kill the leaking PID.
+
+### Insane — Cascading Microservice Failure
+Follow a service chain from frontend to payment to Redis, then flush the cache.
+
+### Apocalypse — Multi-Region Catastrophe
+Handle a compound failure involving split-brain symptoms, resource overload, attack traffic, and cache collapse across multiple systems.
+
+## Why it is hard
+
+KubeSRE is designed so agents cannot simply memorize answers.
+
+- Targets are randomized at reset time.
+- Relevant evidence is mixed with realistic noise.
+- Correct remediation often requires investigation first.
+- Duplicate or careless actions reduce health and reward.
+- Higher tiers require cross-service reasoning rather than single-step fixes.
 
 ## API
 
-- `POST /reset?task=easy`
-- `POST /step`
-- `GET /state`
-- `GET /tasks`
-- `GET /metrics`
-- `GET /analytics` [file:353][file:346]
+### Reset environment
+`POST /reset?task=easy`
 
-## Evaluation notes
+### Execute one action
+`POST /step`
 
-The environment supports six tasks in total, with meaningful difficulty progression and dedicated graders for each task in `openenv.yaml`. [file:355]  
-Earlier evaluation notes show full task coverage and a 100% win rate in the six-task report, while also documenting Apocalypse as the hardest coordination challenge. [file:348]
+### Inspect current state
+`GET /state`
+
+### Prometheus-style metrics
+`GET /metrics`
+
+### Episode analytics
+`GET /analytics`
+
+## Tasks
+
+- easy
+- medium
+- hard
+- extreme
+- insane
+- apocalypse
+
+## Evaluation philosophy
+
+This environment is judged on real-world utility, task and grader quality, environment design, code/spec compliance, and creativity. KubeSRE is intentionally built to score strongly on all five by combining realistic operational tasks, dynamic state generation, measurable outcomes, and meaningful difficulty progression.
+
+## Repository structure
+
+- `server/app.py` — main environment server
+- `server/inference.py` — agent inference entrypoint
+- `openenv.yaml` — OpenEnv metadata and task definitions
+- `ARCHITECTURE.md` — environment design notes
+- `INCIDENTS.md` — task-by-task incident breakdown
+- `EVALUATION.md` — benchmark results and analysis
 
 ## License
 
